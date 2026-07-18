@@ -1,0 +1,17 @@
+[package]
+name = "whimpr-asr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Local speech-to-text. First engine: whisper.cpp via whisper-rs (Metal on macOS),
+# implementing the AsrEngine trait from whimpr-core. Parakeet/FluidAudio is the
+# planned latency upgrade behind the same trait.
+[dependencies]
+whimpr-core = { path = "../whimpr-core" }
+anyhow = { workspace = true }
+whisper-rs = { version = "0.12", features = ["metal"] }
+
+[dev-dependencies]
+hound = "3"
