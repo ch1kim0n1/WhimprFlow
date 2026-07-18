@@ -289,8 +289,13 @@ mod imp {
     /// at startup and whenever a key or model changes, so edits take effect live.
     pub fn rebuild_providers() {
         let settings = current_settings();
-        let openai = read_openai_key()
-            .map(|k| whimpr_cleanup::OpenAiProvider::new(k, settings.openai_model.clone()));
+        let openai = read_openai_key().map(|k| {
+            whimpr_cleanup::OpenAiProvider::with_base_url(
+                k,
+                settings.openai_model.clone(),
+                Some(settings.openai_base_url.clone()),
+            )
+        });
         let anthropic = read_anthropic_key()
             .map(|k| whimpr_cleanup::AnthropicProvider::new(k, settings.anthropic_model.clone()));
         eprintln!(

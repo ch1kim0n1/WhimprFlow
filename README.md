@@ -10,10 +10,10 @@ A **local-first, cross-platform voice dictation app** — hold a key, speak, and
 
 | Platform | Status |
 |----------|--------|
-| **macOS 14+** | **Built and working** — developed and tested locally (Apple Silicon). This is the path that actually runs. |
-| **Windows 10/11** | **Built but UNTESTED.** The Windows platform layer (low-level keyboard hook, SendInput paste, foreground-app detection, the dictation pipeline) is written and wired up — but it has **never been compiled or run on Windows**. It is `cfg(target_os = "windows")` code authored on macOS and will almost certainly need fixes before it builds and runs. Do not assume it works. |
+| **macOS 14+** | **Built and working** — developed and tested locally (Apple Silicon). |
+| **Windows 10/11** | **Built and working** — compiles and runs on real Windows 11 (MSVC). Push-to-talk (hold **Right Ctrl**), Whisper ASR, clipboard+`SendInput` paste, and cloud cleanup (OpenAI or any OpenAI-compatible API, e.g. OpenRouter) are verified end-to-end. Auto-learn dictionary capture is still macOS-only; the local (on-device) LLM cleanup worker builds but is CPU-only for now (no CUDA/Vulkan yet). |
 
-**Disclaimer:** Windows support is present in the source so the codebase is cross-platform in intent, but it is unverified. If you're on Windows, expect to debug the Win32 glue (`src-tauri/src/win.rs`) before anything happens.
+Both platforms are build-from-source only for now — there's no signed installer/release pipeline yet, so `git clone` + the steps below is the way to run it on either OS.
 
 ---
 
@@ -58,10 +58,41 @@ Models are **not** committed (they're multi-GB). Place them under
 `~/Library/Application Support/WhimprFlow/models/` (macOS) —
 a Whisper `ggml-*.en.bin` and a Qwen GGUF for local cleanup.
 
+## Build (Windows)
+
+Requires Rust (stable, MSVC toolchain), [CMake](https://cmake.org/download/), LLVM/clang
+(for `bindgen` — set `LIBCLANG_PATH` to its `bin/` dir if it isn't auto-detected), the
+**Visual Studio Build Tools** (Desktop development with C++ workload), and Node + pnpm.
+
+```powershell
+cd ui; pnpm install; cd ..
+# Dev (starts the Vite UI server + the app with hot reload):
+ui\node_modules\.bin\tauri.CMD dev
+# Or a release build:
+ui\node_modules\.bin\tauri.CMD build
+```
+
+Place models under `%APPDATA%\WhimprFlow\models\` — a Whisper `ggml-*.en.bin`
+(e.g. `ggml-base.en.bin` from
+[huggingface.co/ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp))
+and, optionally, a Qwen GGUF for local (offline) cleanup. No local LLM model?
+Set Cleanup Engine to **OpenAI** in the Hub's Settings pane and point the base URL at
+any OpenAI-compatible API — for example `https://openrouter.ai/api/v1` for
+[OpenRouter](https://openrouter.ai), with your OpenRouter key pasted into the
+"OpenAI API key" field.
+
+Push-to-talk defaults to **Right Ctrl** (hold to record, release to paste) — the
+Windows analogue of Wispr Flow's own `Ctrl+Win` default; a configurable hotkey is
+planned but not wired up yet.
+
+The Windows GPU backend for Whisper/llama.cpp is CPU-only for now (the macOS build
+uses Metal); CUDA/Vulkan feature flags can be added in `crates/whimpr-asr/Cargo.toml`
+and `crates/whimpr-llm-worker/Cargo.toml` for anyone wanting to pick that up.
+
 ## Notes & disclaimers
 
 - **Not affiliated with, endorsed by, or connected to Wispr Flow or any other product.** WhimprFlow is an independent, from-scratch reimplementation of the dictation workflow, with its own name, branding, colors, strings, and code. No third-party code or assets are included.
-- **Proof of concept.** Rushed, under-tested, and missing plenty (Windows is unverified, auto-learn is macOS-only and conservative, no installer/notarization pipeline, error handling is thin). Contributions and fixes welcome.
+- **Proof of concept.** Rushed, under-tested, and missing plenty (auto-learn is macOS-only and conservative, no installer/notarization/signing pipeline on either OS, error handling is thin). Contributions and fixes welcome.
 - **Privacy.** ASR and default cleanup run on-device. Cloud cleanup is opt-in and only sends the transcript (not audio) to the provider you choose. API keys never touch disk in plaintext.
 
 ## License

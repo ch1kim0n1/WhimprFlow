@@ -55,28 +55,58 @@ impl Drop for LocalWorker {
     }
 }
 
+/// Platform application-support dir: `~/Library/Application Support/WhimprFlow`
+/// on macOS, `%APPDATA%\WhimprFlow` on Windows.
+fn app_support_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        let base = std::env::var("APPDATA").unwrap_or_default();
+        PathBuf::from(base).join("WhimprFlow")
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var("HOME").unwrap_or_default();
+        PathBuf::from(home).join("Library/Application Support/WhimprFlow")
+    }
+}
+
 /// Find the worker binary: next to the app executable (bundled), else the dev build dir.
 pub fn worker_bin_path() -> Option<PathBuf> {
+    let exe_name = if cfg!(target_os = "windows") {
+        "whimpr-llm-worker.exe"
+    } else {
+        "whimpr-llm-worker"
+    };
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let cand = dir.join("whimpr-llm-worker");
+            let cand = dir.join(exe_name);
             if cand.exists() {
                 return Some(cand);
             }
         }
     }
     // Dev fallback.
-    let home = std::env::var("HOME").unwrap_or_default();
-    let dev = PathBuf::from(home).join("WhimprFlow/target/release/whimpr-llm-worker");
-    dev.exists().then_some(dev)
+    #[cfg(target_os = "windows")]
+    {
+        let dev = std::env::current_dir()
+            .unwrap_or_default()
+            .join("target/release")
+            .join(exe_name);
+        return dev.exists().then_some(dev);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let dev = PathBuf::from(home).join("WhimprFlow/target/release/whimpr-llm-worker");
+        dev.exists().then_some(dev)
+    }
 }
 
-/// The local cleanup model path (same models dir as whisper). Prefer the larger,
-/// much more capable Qwen3-4B if present (far better at self-corrections and
-/// structure than the 1.5B); fall back to the 1.5B otherwise.
+/// The local cleanup model path (same models dir as whisper/ASR). Prefer the
+/// larger, much more capable Qwen3-4B if present (far better at
+/// self-corrections and structure than the 1.5B); fall back to the 1.5B otherwise.
 pub fn model_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let dir = PathBuf::from(home).join("Library/Application Support/WhimprFlow/models");
+    let dir = app_support_dir().join("models");
     for name in [
         "qwen3-4b-instruct-2507-q4_k_m.gguf",
         "qwen2.5-1.5b-instruct-q4_k_m.gguf",

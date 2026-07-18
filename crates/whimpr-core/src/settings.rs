@@ -28,6 +28,11 @@ pub struct Settings {
     pub cleanup_mode: CleanupMode,
     pub cleanup_level: CleanupLevel,
     pub openai_model: String,
+    /// API root for the "OpenAI" cleanup mode, e.g. `https://openrouter.ai/api/v1`
+    /// to route through OpenRouter instead of OpenAI directly (same wire format).
+    /// Empty string (the default) means OpenAI's own endpoint.
+    #[serde(default)]
+    pub openai_base_url: String,
     pub anthropic_model: String,
     /// Play the record-start ping.
     pub sound_on_start: bool,
@@ -39,6 +44,7 @@ impl Default for Settings {
             cleanup_mode: CleanupMode::default(),
             cleanup_level: CleanupLevel::Light,
             openai_model: "gpt-4o-mini".to_string(),
+            openai_base_url: String::new(),
             anthropic_model: "claude-haiku-4-5".to_string(),
             sound_on_start: true,
         }
