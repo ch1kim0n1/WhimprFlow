@@ -41,7 +41,14 @@ frontmost app (clipboard saved/restored). Each stage validated independently.
 - **M1 sidecar isolation** — the Fn hook + injection currently run **in-process** (works on macOS);
   moving them to the shared Rust sidecar process (per plan) is pending.
 - **M0 remainder** — permissions onboarding UI, CI runner, notarize/signing pipelines.
-- **M6 Windows** — the whole Windows shell (WH_KEYBOARD_LL, UIA/SendInput, overlay, NSIS/signing).
+- **M6 Windows (partial)** — the workspace now builds and links on Windows 11 (MSVC): `WH_KEYBOARD_LL`
+  push-to-talk (Right Ctrl), clipboard+`SendInput` paste, foreground-process detection, Whisper ASR
+  (CPU), and the tray/overlay/Hub shell all verified running end-to-end. Also added: an
+  OpenAI-compatible `base_url` on the cloud cleanup provider so Windows users without an
+  OpenAI/Anthropic key can point it at OpenRouter or similar. Remaining: GPU backend for Whisper/
+  llama.cpp (CPU-only today), UIA-based insertion beyond clipboard paste, secure-input/elevated-window
+  guards, a configurable hotkey (hardcoded to Right Ctrl), auto-learn (still macOS-only), and
+  NSIS/signing for a real installer.
 - **Dictionary auto-learn** (AX diff), history persistence + Hub history list, command mode.
 
 ## How to run what exists

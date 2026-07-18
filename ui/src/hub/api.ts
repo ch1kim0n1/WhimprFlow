@@ -9,6 +9,9 @@ export interface Settings {
   cleanup_mode: CleanupMode;
   cleanup_level: CleanupLevel;
   openai_model: string;
+  // API root for "OpenAI" mode — leave blank for OpenAI itself, or point at
+  // an OpenAI-compatible endpoint like OpenRouter (https://openrouter.ai/api/v1).
+  openai_base_url: string;
   anthropic_model: string;
   sound_on_start: boolean;
 }
@@ -51,6 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cleanup_mode: "open_ai",
   cleanup_level: "light",
   openai_model: "gpt-4o-mini",
+  openai_base_url: "",
   anthropic_model: "claude-haiku-4-5",
   sound_on_start: true,
 };

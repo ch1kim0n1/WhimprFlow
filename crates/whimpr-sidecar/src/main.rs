@@ -9,8 +9,18 @@
 //! globally observe the Fn key at all — everything downstream depends on it.
 //!
 //! It auto-exits with success after 3 Fn presses, or times out after 60s.
+//!
+//! macOS-only demo; other platforms get a stub `main` so the workspace still
+//! builds (see `win.rs`/`hotkey.rs` for the real Windows push-to-talk hook).
 
-#![cfg(target_os = "macos")]
+#[cfg(not(target_os = "macos"))]
+fn main() {
+    eprintln!("[whimpr-sidecar] this standalone Fn-key demo is macOS-only; nothing to do here.");
+}
+
+#[cfg(target_os = "macos")]
+mod imp {
+#![allow(dead_code)]
 
 use std::io::Write;
 use std::os::raw::c_void;
@@ -110,7 +120,7 @@ extern "C" fn tap_callback(
     event
 }
 
-fn main() {
+pub fn run() {
     println!("WhimprFlow — Fn (Globe) key detection test");
     println!("------------------------------------------");
 
@@ -163,4 +173,11 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+} // mod imp
+
+#[cfg(target_os = "macos")]
+fn main() {
+    imp::run();
 }

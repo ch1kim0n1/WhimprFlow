@@ -348,14 +348,17 @@ pub fn update_settings(new: whimpr_core::Settings) {
 }
 
 pub fn rebuild_providers() {
-    let model = current_settings_inner().openai_model;
+    let settings = current_settings_inner();
+    let model = settings.openai_model;
+    let base_url = settings.openai_base_url;
     let key = keyring::Entry::new("com.whimpr.whimprflow", "openai_api_key")
         .ok()
         .and_then(|e| e.get_password().ok())
         .filter(|k| !k.trim().is_empty());
     if let Some(slot) = OPENAI.get() {
-        *slot.lock().unwrap() =
-            key.map(|k| whimpr_cleanup::OpenAiProvider::new(k, model));
+        *slot.lock().unwrap() = key.map(|k| {
+            whimpr_cleanup::OpenAiProvider::with_base_url(k, model, Some(base_url))
+        });
     }
 }
 

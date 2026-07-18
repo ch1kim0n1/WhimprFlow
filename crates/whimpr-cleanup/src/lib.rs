@@ -7,23 +7,46 @@ use std::time::Duration;
 
 use whimpr_core::cleanup::{build_messages, CleanupContext, CleanupProvider, ProviderId};
 
-/// Cleanup via the OpenAI Chat Completions API.
+/// Default OpenAI Chat Completions endpoint.
+const OPENAI_DEFAULT_URL: &str = "https://api.openai.com/v1/chat/completions";
+
+/// Cleanup via the OpenAI Chat Completions API — or any OpenAI-compatible
+/// endpoint (OpenRouter, a local server, etc.) when `base_url` is set.
+/// OpenRouter in particular speaks this exact wire format at
+/// `https://openrouter.ai/api/v1/chat/completions`.
 pub struct OpenAiProvider {
     client: reqwest::blocking::Client,
     api_key: String,
     model: String,
+    /// Full chat-completions URL. Defaults to OpenAI's when empty.
+    url: String,
 }
 
 impl OpenAiProvider {
     pub fn new(api_key: String, model: impl Into<String>) -> Self {
+        Self::with_base_url(api_key, model, None)
+    }
+
+    /// `base_url` is the API root (e.g. `https://openrouter.ai/api/v1`), without
+    /// the `/chat/completions` suffix. `None` or empty uses OpenAI directly.
+    pub fn with_base_url(
+        api_key: String,
+        model: impl Into<String>,
+        base_url: Option<String>,
+    ) -> Self {
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(15))
             .build()
             .expect("failed to build HTTP client");
+        let url = match base_url.map(|s| s.trim().trim_end_matches('/').to_string()) {
+            Some(base) if !base.is_empty() => format!("{base}/chat/completions"),
+            _ => OPENAI_DEFAULT_URL.to_string(),
+        };
         Self {
             client,
             api_key,
             model: model.into(),
+            url,
         }
     }
 }
@@ -48,7 +71,7 @@ impl CleanupProvider for OpenAiProvider {
 
         let resp = self
             .client
-            .post("https://api.openai.com/v1/chat/completions")
+            .post(&self.url)
             .bearer_auth(&self.api_key)
             .json(&body)
             .send()?;

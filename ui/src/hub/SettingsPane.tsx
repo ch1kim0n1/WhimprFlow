@@ -16,7 +16,7 @@ import {
 const MODES: { value: CleanupMode; label: string; hint: string }[] = [
   { value: "raw", label: "Raw", hint: "Paste exactly what you said" },
   { value: "local", label: "Local", hint: "On-device model (offline)" },
-  { value: "open_ai", label: "OpenAI", hint: "Cloud cleanup via OpenAI" },
+  { value: "open_ai", label: "OpenAI", hint: "Cloud cleanup via OpenAI (or an OpenAI-compatible API like OpenRouter — set the base URL below)" },
   { value: "anthropic", label: "Anthropic", hint: "Cloud cleanup via Claude" },
 ];
 
@@ -153,6 +153,54 @@ export function SettingsPane({
             setTimeout(refresh, 400);
           }}
         />
+        <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12.5, color: theme.textMuted, marginBottom: 6 }}>
+              Base URL (blank = OpenAI; e.g. https://openrouter.ai/api/v1 for OpenRouter)
+            </div>
+            <input
+              type="text"
+              value={settings.openai_base_url}
+              placeholder="https://openrouter.ai/api/v1"
+              onChange={(e) => onChange({ ...settings, openai_base_url: e.target.value })}
+              style={{
+                width: "100%",
+                background: theme.cardBgSubtle,
+                border: `1px solid ${theme.border}`,
+                borderRadius: 10,
+                padding: "9px 12px",
+                color: theme.textBody,
+                fontFamily: font.mono,
+                fontSize: 13,
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12.5, color: theme.textMuted, marginBottom: 6 }}>
+              Model (e.g. an OpenRouter model slug)
+            </div>
+            <input
+              type="text"
+              value={settings.openai_model}
+              placeholder="meta-llama/llama-3.3-70b-instruct:free"
+              onChange={(e) => onChange({ ...settings, openai_model: e.target.value })}
+              style={{
+                width: "100%",
+                background: theme.cardBgSubtle,
+                border: `1px solid ${theme.border}`,
+                borderRadius: 10,
+                padding: "9px 12px",
+                color: theme.textBody,
+                fontFamily: font.mono,
+                fontSize: 13,
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+        </div>
         <KeyField
           label="Anthropic API key"
           configured={status.has_anthropic_key}
