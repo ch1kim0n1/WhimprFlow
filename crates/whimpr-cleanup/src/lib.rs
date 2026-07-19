@@ -16,6 +16,11 @@ const OPENAI_DEFAULT_URL: &str = "https://api.openai.com/v1/chat/completions";
 /// endpoint (OpenRouter, a local server, etc.) when `base_url` is set.
 /// OpenRouter in particular speaks this exact wire format at
 /// `https://openrouter.ai/api/v1/chat/completions`.
+///
+/// `Clone` is cheap (the reqwest client is an internal `Arc`): the shell clones
+/// a provider out of its mutex before a blocking HTTP call so settings updates
+/// never wait on an in-flight request.
+#[derive(Clone)]
 pub struct OpenAiProvider {
     client: reqwest::blocking::Client,
     api_key: String,
@@ -139,6 +144,10 @@ impl CleanupProvider for OpenAiProvider {
 
 /// Cleanup via the Anthropic Messages API. Same shared system prompt; the only
 /// difference from OpenAI is the wire envelope (top-level `system`, `x-api-key`).
+///
+/// `Clone` is cheap (the reqwest client is an internal `Arc`); see
+/// [`OpenAiProvider`] for why providers are cloneable.
+#[derive(Clone)]
 pub struct AnthropicProvider {
     client: reqwest::blocking::Client,
     api_key: String,

@@ -179,9 +179,61 @@ pub fn format_mode_for_app(bundle_id: &str) -> Option<&'static str> {
     }
 }
 
-/// Assemble the final system prompt: the shared prompt, the level modifier, and
-/// (when the paste target is known) the per-app Formatting Mode.
-pub fn system_for(level: super::levels::CleanupLevel, app_bundle_id: Option<&str>) -> String {
+/// True when `bundle_id` is an IDE, code editor, or terminal  -  a paste target
+/// where prose autocorrect would mangle identifiers and shell commands.
+/// Substring/prefix matched case-insensitively, same style as
+/// [`format_mode_for_app`], so editions and forks of the same family still hit.
+pub fn is_code_app(bundle_id: &str) -> bool {
+    let b = bundle_id.to_ascii_lowercase();
+    // Editors / IDEs.
+    b.contains("vscode")                    // com.microsoft.VSCode
+        || b.contains("vscodium")
+        || b.contains("xcode")              // com.apple.dt.Xcode
+        || b.starts_with("com.jetbrains")   // IntelliJ, PyCharm, CLion, ...
+        || b.contains("dev.zed")            // dev.zed.Zed
+        || b.contains("cursor")
+        || b.contains("todesktop.230313mzl4w4u92") // Cursor's opaque ToDesktop id
+        || b.contains("windsurf")
+        || b.contains("sublimetext")
+        // Vim/Neovim GUI wrappers.
+        || b.contains("neovide")
+        || b.contains("macvim")
+        || b.contains("vimr")
+        || b.contains("neovim")
+        // Terminals.
+        || b.contains("com.apple.terminal")
+        || b.contains("iterm")
+        || b.contains("dev.warp")
+        || b.contains("ghostty")
+}
+
+/// The code-dictation section appended when the target is a code app and the
+/// user has Code Mode on: protect identifiers and honor spoken casing instead
+/// of prose autocorrect.
+///
+/// ponytail: v1 ceiling is prompt-level guidance only  -  no project awareness
+/// (open file, language, symbol table). Upgrade path: feed editor context into
+/// `CleanupContext.window_context` and a language-specific prompt variant.
+const CODE_MODE_SECTION: &str = "\
+Target is a CODE EDITOR / IDE / TERMINAL. Additional rules for code dictation:
+- Keep identifiers, symbols, commands, flags, paths, and operators VERBATIM; never \
+\"fix\" their spelling, spacing, or casing toward English words.
+- Honor spoken casing conventions: \"camel case user name\" -> userName, \"snake case \
+user name\" -> user_name, \"pascal case user name\" -> UserName, \"kebab case user \
+name\" -> user-name, \"all caps user name\" -> USERNAME.
+- Do NOT add prose punctuation (periods, commas, sentence capitalization) to \
+code-like fragments; only add punctuation the speaker dictated.
+- NEVER wrap the output in code fences, backticks, or quotes.";
+
+/// Assemble the final system prompt: the shared prompt, the level modifier,
+/// (when the paste target is known) the per-app Formatting Mode, and  -  when the
+/// target is a code app AND the caller opted into Code Mode  -  the
+/// code-dictation section.
+pub fn system_for_ctx(
+    level: super::levels::CleanupLevel,
+    app_bundle_id: Option<&str>,
+    code_mode: bool,
+) -> String {
     let mut s = SYSTEM_PROMPT.to_string();
     let modifier = level.modifier();
     if !modifier.is_empty() {
@@ -192,10 +244,89 @@ pub fn system_for(level: super::levels::CleanupLevel, app_bundle_id: Option<&str
         s.push_str("\n\n# Formatting Mode (follow this for structure and tone)\n");
         s.push_str(mode);
     }
+    if code_mode && app_bundle_id.map(is_code_app).unwrap_or(false) {
+        s.push_str("\n\n# Code Dictation (follow this in code targets)\n");
+        s.push_str(CODE_MODE_SECTION);
+    }
     s
+}
+
+/// Assemble the final system prompt with no Code Mode adaptation (the original
+/// signature; delegates to [`system_for_ctx`]).
+pub fn system_for(level: super::levels::CleanupLevel, app_bundle_id: Option<&str>) -> String {
+    system_for_ctx(level, app_bundle_id, false)
 }
 
 /// Assemble the final system prompt for a level with no app adaptation.
 pub fn system_for_level(level: super::levels::CleanupLevel) -> String {
     system_for(level, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cleanup::levels::CleanupLevel;
+
+    #[test]
+    fn code_apps_are_detected() {
+        for id in [
+            "com.microsoft.VSCode",
+            "com.vscodium.codium",
+            "com.apple.dt.Xcode",
+            "com.jetbrains.intellij",
+            "com.jetbrains.pycharm",
+            "dev.zed.Zed",
+            "com.todesktop.230313mzl4w4u92", // Cursor
+            "com.exafunction.windsurf",
+            "com.sublimetext.4",
+            "com.neovide.neovide",
+            "org.vim.MacVim",
+            "com.qvacua.VimR",
+            "com.apple.Terminal",
+            "com.googlecode.iterm2",
+            "dev.warp.Warp-Stable",
+            "com.mitchellh.ghostty",
+        ] {
+            assert!(is_code_app(id), "{id} should be a code app");
+        }
+        for id in [
+            "com.apple.mail",
+            "com.apple.Notes",
+            "com.tinyspeck.slackmacgap",
+        ] {
+            assert!(!is_code_app(id), "{id} should NOT be a code app");
+        }
+    }
+
+    #[test]
+    fn code_mode_section_requires_both_code_app_and_opt_in() {
+        let base = system_for(CleanupLevel::Light, Some("com.microsoft.VSCode"));
+        assert!(
+            !base.contains("# Code Dictation"),
+            "old signature must never add the code section"
+        );
+
+        let on = system_for_ctx(CleanupLevel::Light, Some("com.microsoft.VSCode"), true);
+        assert!(on.contains("# Code Dictation"));
+        assert!(on.contains("NEVER wrap the output in code fences"));
+
+        // Opted in but not a code app -> no section.
+        let not_code = system_for_ctx(CleanupLevel::Light, Some("com.apple.mail"), true);
+        assert!(!not_code.contains("# Code Dictation"));
+
+        // Code app but opted out -> no section.
+        let opted_out = system_for_ctx(CleanupLevel::Light, Some("com.microsoft.VSCode"), false);
+        assert!(!opted_out.contains("# Code Dictation"));
+    }
+
+    #[test]
+    fn old_signatures_are_unchanged_by_the_ctx_variant() {
+        let a = system_for(CleanupLevel::Medium, Some("com.apple.mail"));
+        let b = system_for_ctx(CleanupLevel::Medium, Some("com.apple.mail"), false);
+        assert_eq!(a, b);
+        assert_eq!(
+            system_for_level(CleanupLevel::None),
+            system_for(CleanupLevel::None, None)
+        );
+    }
 }

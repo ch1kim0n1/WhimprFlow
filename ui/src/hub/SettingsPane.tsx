@@ -28,6 +28,26 @@ const LEVELS: { value: CleanupLevel; label: string; hint: string }[] = [
   { value: "high", label: "High", hint: "Rewrite for brevity and polish." },
 ];
 
+// Common dictation languages, as whisper.cpp language codes. "Auto" (stored as
+// language: null) lets the model detect the language per session.
+const LANGUAGES: { value: string; label: string }[] = [
+  { value: "en", label: "English" },
+  { value: "es", label: "Spanish" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "it", label: "Italian" },
+  { value: "pt", label: "Portuguese" },
+  { value: "nl", label: "Dutch" },
+  { value: "pl", label: "Polish" },
+  { value: "ru", label: "Russian" },
+  { value: "uk", label: "Ukrainian" },
+  { value: "ja", label: "Japanese" },
+  { value: "ko", label: "Korean" },
+  { value: "zh", label: "Chinese" },
+  { value: "hi", label: "Hindi" },
+  { value: "ar", label: "Arabic" },
+];
+
 function SectionTitle({
   children,
   sub,
@@ -113,6 +133,41 @@ function KeyField({
         </Button>
       </div>
       {saved && <div style={{ fontSize: 12, color: theme.accentDeep, marginTop: 6 }}>Saved to keychain ✓</div>}
+    </div>
+  );
+}
+
+// A label (+ optional detail) with an On/Off control, matching the pane's
+// existing row style (see Safe Mode / record-start sound).
+function ToggleRow({
+  label,
+  detail,
+  value,
+  onChange,
+}: {
+  label: string;
+  detail?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: theme.textStrong }}>{label}</div>
+        {detail && (
+          <div style={{ fontSize: 12.5, color: theme.textMuted, marginTop: 2, lineHeight: 1.45, maxWidth: 430 }}>
+            {detail}
+          </div>
+        )}
+      </div>
+      <Segmented
+        options={[
+          { value: "on", label: "On" },
+          { value: "off", label: "Off" },
+        ]}
+        value={value ? "on" : "off"}
+        onChange={(v) => onChange(v === "on")}
+      />
     </div>
   );
 }
@@ -309,6 +364,63 @@ export function SettingsPane({
               </button>
             );
           })}
+        </div>
+      </Card>
+
+      <Card style={{ marginBottom: 16 }}>
+        <SectionTitle icon="mic" sub="The language you dictate in. Auto detects it per session; picking one improves accuracy.">
+          Language
+        </SectionTitle>
+        <select
+          value={settings.language ?? "auto"}
+          onChange={(e) =>
+            onChange({ ...settings, language: e.target.value === "auto" ? null : e.target.value })
+          }
+          aria-label="Dictation language"
+          style={{
+            background: theme.cardBgSubtle,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 10,
+            padding: "9px 12px",
+            color: theme.textBody,
+            fontFamily: font.ui,
+            fontSize: 13,
+            outline: "none",
+            minWidth: 220,
+          }}
+        >
+          <option value="auto">Auto-detect</option>
+          {LANGUAGES.map((l) => (
+            <option key={l.value} value={l.value}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+      </Card>
+
+      <Card style={{ marginBottom: 16 }}>
+        <SectionTitle icon="mic" sub="How dictation behaves while you speak and where it lands.">
+          Dictation
+        </SectionTitle>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <ToggleRow
+            label="Live preview while speaking"
+            detail="Show provisional text in the floating pill as you talk. Nothing is typed until you finish."
+            value={settings.streaming_preview}
+            onChange={(v) => onChange({ ...settings, streaming_preview: v })}
+          />
+          <ToggleRow
+            label="Meeting mode"
+            detail="Hands-free sessions go to Studio notes, not the cursor."
+            value={settings.meeting_mode}
+            onChange={(v) => onChange({ ...settings, meeting_mode: v })}
+          />
+          <ToggleRow
+            label="Code Mode in IDEs and terminals"
+            detail="Keep identifiers, casing, and symbols verbatim when dictating into a code editor or terminal."
+            value={settings.code_mode_auto}
+            onChange={(v) => onChange({ ...settings, code_mode_auto: v })}
+          />
         </div>
       </Card>
 

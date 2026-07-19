@@ -19,15 +19,21 @@ pub mod snippets;
 pub mod state;
 pub mod stats;
 pub mod types;
+pub mod voice_memory;
+pub mod workflows;
 
 pub use asr::{AsrEngine, AsrEngineId, Transcript};
 pub use cleanup::{CleanupContext, CleanupLevel, CleanupProvider, ProviderId, VocabEntry};
 pub use dictionary::{DictSource, DictionaryEntry, DictionaryStore};
 pub use safety::redact_inappropriate_words;
-pub use settings::{Chord, CleanupMode, Formality, Key, KeyBindings, Settings, StyleProfile};
+pub use settings::{
+    CapsuleSettings, Chord, CleanupMode, Formality, Key, KeyBindings, Settings, StyleProfile,
+};
 pub use snippets::{SnippetEntry, SnippetStore};
 pub use state::{
     Action, BarState, DictationState, Input, PipelineEvent, StateMachine, TriggerToken,
 };
-pub use stats::{HistoryItem, SessionRecord, StatsStore, StatsSummary};
+pub use stats::{HistoryItem, Provenance, SessionRecord, StatsStore, StatsSummary};
 pub use types::{RecordMode, SessionId};
+pub use voice_memory::{CorrectionEvent, VoiceMemory};
+pub use workflows::{WorkflowDestination, WorkflowEntry, WorkflowRevision, WorkflowStore};

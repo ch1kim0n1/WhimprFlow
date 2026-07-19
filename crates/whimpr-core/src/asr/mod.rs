@@ -18,6 +18,10 @@ pub enum AsrEngineId {
 pub struct Transcript {
     pub text: String,
     pub confidence: Option<f32>,
+    /// Whitespace-separated words whose tokens averaged low probability, in
+    /// transcript order. Empty when the engine does not report token data.
+    #[serde(default)]
+    pub low_words: Vec<String>,
 }
 
 /// Static capabilities of an engine.

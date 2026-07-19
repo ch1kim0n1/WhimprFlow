@@ -143,6 +143,9 @@ mod imp {
             let Some(after) = after else { return };
             if let Some((mishear, correct)) = super::detect_correction(&inserted, &after) {
                 eprintln!("[whimpr] ✨ auto-learned: \"{mishear}\" -> \"{correct}\"");
+                // Voice Memory keeps the auditable log of every learned
+                // correction; the dictionary keeps the working spelling rule.
+                crate::hotkey::voice_memory_record(mishear.clone(), correct.clone(), "autolearn");
                 crate::hotkey::dictionary_learn(correct, vec![mishear]);
             }
         });

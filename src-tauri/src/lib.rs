@@ -12,6 +12,7 @@ mod hotkey;
 #[cfg(target_os = "linux")]
 mod linux;
 mod local_llm;
+mod notes;
 mod paste;
 #[cfg(target_os = "windows")]
 mod win;
@@ -84,6 +85,9 @@ fn build_hub(app: &tauri::App) -> tauri::Result<WebviewWindow> {
         .inner_size(920.0, 640.0)
         .min_inner_size(720.0, 480.0)
         .visible(true)
+        // Permit WebView downloads: the Studio "Export .md" button saves a blob,
+        // which the WebView blocks unless a download handler accepts it.
+        .on_download(|_, _| true)
         .build()
 }
 
@@ -126,10 +130,28 @@ fn get_stats(tz_offset_minutes: i32) -> whimpr_core::StatsSummary {
     hotkey::stats_summary(tz_offset_minutes)
 }
 
-/// Recent dictations for the Hub Home history list (newest first).
+/// Recent dictations for the Hub Home history list (newest first). `limit`
+/// defaults to 200; the Studio Timeline search passes a higher cap so it
+/// covers the full history, not just the newest page.
 #[tauri::command]
-fn get_history() -> Vec<whimpr_core::HistoryItem> {
-    hotkey::history(200)
+fn get_history(limit: Option<usize>) -> Vec<whimpr_core::HistoryItem> {
+    hotkey::history(limit.unwrap_or(200))
+}
+
+/// The Privacy pane's dictation ledger (newest first): every record, INCLUDING
+/// textless ones (pruned or never stored), so provenance is auditable for
+/// every dictation.
+#[tauri::command]
+fn get_ledger(limit: Option<usize>) -> Vec<whimpr_core::HistoryItem> {
+    hotkey::ledger(limit.unwrap_or(200))
+}
+
+/// The workflow result currently held for approval, if any  -  lets the
+/// Workflows pane seed itself on mount, since the `whimpr://pending` event is
+/// fire-and-forget and may have fired before the pane existed.
+#[tauri::command]
+fn get_pending() -> Option<hotkey::PendingPayload> {
+    hotkey::get_pending()
 }
 
 /// Dictionary entries for the Hub Dictionary screen.
@@ -138,9 +160,16 @@ fn get_dictionary() -> Vec<hotkey::DictEntryDto> {
     hotkey::dictionary_entries()
 }
 
-/// Add a manual dictionary entry (word + optional known mishears).
+/// Add a manual dictionary entry (word + optional known mishears). Each
+/// mishear is also recorded in Voice Memory, so manual corrections land in
+/// the same audit log as auto-learned ones.
 #[tauri::command]
 fn add_dictionary_entry(correct: String, mishears: Vec<String>) {
+    for mishear in &mishears {
+        if !mishear.trim().is_empty() {
+            hotkey::voice_memory_record(mishear.clone(), correct.clone(), "manual");
+        }
+    }
     hotkey::dictionary_add(correct, mishears);
 }
 
@@ -166,6 +195,109 @@ fn add_snippet(trigger: String, expansion: String) {
 #[tauri::command]
 fn remove_snippet(trigger: String) {
     hotkey::snippet_remove(&trigger);
+}
+
+/// Workflow entries for the Hub Workflows screen.
+#[tauri::command]
+fn get_workflows() -> Vec<whimpr_core::WorkflowEntry> {
+    hotkey::workflow_entries()
+}
+
+/// Add (or update, keyed by name) a voice workflow. An update bumps the version
+/// and archives the prior revision.
+#[tauri::command]
+fn add_workflow(
+    name: String,
+    trigger: String,
+    instruction: String,
+    destination: whimpr_core::WorkflowDestination,
+    require_approval: bool,
+) {
+    hotkey::workflow_add(name, trigger, instruction, destination, require_approval);
+}
+
+/// Remove a workflow by its name.
+#[tauri::command]
+fn remove_workflow(name: String) {
+    hotkey::workflow_remove(&name);
+}
+
+/// Approve the workflow result currently held for approval (see the
+/// `whimpr://pending` event): executes its destination now.
+#[tauri::command]
+fn approve_pending() {
+    hotkey::approve_pending();
+}
+
+/// Discard the workflow result currently held for approval.
+#[tauri::command]
+fn reject_pending() {
+    hotkey::reject_pending();
+}
+
+/// Pipeline health for the Hub's health chips (ASR/local LLM/permissions).
+#[tauri::command]
+fn get_health() -> hotkey::Health {
+    hotkey::get_health()
+}
+
+/// Privacy: strip stored dictation text (final + raw) from every history
+/// record, keeping numeric stats. Returns how many records were stripped.
+#[tauri::command]
+fn clear_history_text() -> usize {
+    hotkey::clear_history_text()
+}
+
+/// Privacy: what the last Context Capsule contained  -  exactly what a cleanup
+/// request would include. `None` until a capsule has been captured this run.
+#[tauri::command]
+fn get_last_capsule() -> Option<hotkey::CapsuleReport> {
+    hotkey::get_last_capsule()
+}
+
+/// The Voice Memory correction audit list.
+#[tauri::command]
+fn get_voice_memory() -> Vec<whimpr_core::CorrectionEvent> {
+    hotkey::get_voice_memory()
+}
+
+/// Export everything WhimprFlow has learned (corrections + dictionary +
+/// snippets + style) as one plain-JSON bundle; returns the file's path.
+#[tauri::command]
+fn export_voice_memory() -> Result<String, String> {
+    hotkey::export_voice_memory()
+}
+
+/// Wipe the Voice Memory correction log.
+#[tauri::command]
+fn clear_voice_memory() {
+    hotkey::clear_voice_memory();
+}
+
+/// Screenshot into the app's captures folder; returns the image path
+/// (macOS only in this pass).
+#[tauri::command]
+fn capture_screen() -> Result<String, String> {
+    hotkey::capture_screen()
+}
+
+/// Notes (meeting transcripts, workflow notes, snap-notes), newest first.
+#[tauri::command]
+fn get_notes() -> Vec<notes::Note> {
+    notes::entries()
+}
+
+/// Append a note. `image_path` links a captured screenshot (optional  -  the
+/// Studio "Snap + note" flow passes the path `capture_screen` returned).
+#[tauri::command]
+fn add_note(title: String, text: String, image_path: Option<String>) {
+    notes::add(title, text, image_path);
+}
+
+/// Remove a note by its timestamp.
+#[tauri::command]
+fn remove_note(ts_unix: u64) {
+    notes::remove(ts_unix);
 }
 
 /// Permission + capability status shown in the Hub.
@@ -328,12 +460,29 @@ pub fn run() {
             set_settings,
             get_stats,
             get_history,
+            get_ledger,
+            get_pending,
             get_dictionary,
             add_dictionary_entry,
             remove_dictionary_entry,
             get_snippets,
             add_snippet,
             remove_snippet,
+            get_workflows,
+            add_workflow,
+            remove_workflow,
+            approve_pending,
+            reject_pending,
+            get_health,
+            clear_history_text,
+            get_last_capsule,
+            get_voice_memory,
+            export_voice_memory,
+            clear_voice_memory,
+            capture_screen,
+            get_notes,
+            add_note,
+            remove_note,
             get_status,
             request_microphone,
             request_accessibility,

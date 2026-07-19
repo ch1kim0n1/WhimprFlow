@@ -9,7 +9,10 @@ import { DictionaryPane } from "./DictionaryPane";
 import { SnippetsPane } from "./SnippetsPane";
 import { StylePane } from "./StylePane";
 import { TransformsPane } from "./TransformsPane";
+import { WorkflowsPane } from "./WorkflowsPane";
 import { ScratchpadPane } from "./ScratchpadPane";
+import { MemoryPane } from "./MemoryPane";
+import { PrivacyPane } from "./PrivacyPane";
 import { ShortcutsPane } from "./ShortcutsPane";
 import { SettingsPane } from "./SettingsPane";
 import { Help } from "./Help";
@@ -115,7 +118,10 @@ export function App() {
             {page === "snippets" && <SnippetsPane />}
             {page === "style" && <StylePane settings={settings} onChange={update} />}
             {page === "transforms" && <TransformsPane />}
+            {page === "workflows" && <WorkflowsPane />}
             {page === "scratchpad" && <ScratchpadPane />}
+            {page === "memory" && <MemoryPane />}
+            {page === "privacy" && <PrivacyPane settings={settings} onChange={update} status={status} />}
             {page === "shortcuts" && <ShortcutsPane settings={settings} onChange={update} />}
             {page === "settings" && (
               <SettingsPane settings={settings} onChange={update} status={status} refresh={refresh} />

@@ -10,7 +10,10 @@ export type Page =
   | "snippets"
   | "style"
   | "transforms"
+  | "workflows"
   | "scratchpad"
+  | "memory"
+  | "privacy"
   | "shortcuts"
   | "settings"
   | "help"
@@ -25,10 +28,13 @@ const MAIN: NavDef[] = [
   { key: "snippets", label: "Snippets", icon: "snippets" },
   { key: "style", label: "Style", icon: "style" },
   { key: "transforms", label: "Transforms", icon: "transforms" },
-  { key: "scratchpad", label: "Scratchpad", icon: "scratchpad" },
+  { key: "workflows", label: "Workflows", icon: "sparkles" },
+  { key: "scratchpad", label: "Studio", icon: "scratchpad" },
+  { key: "memory", label: "Voice Memory", icon: "archive" },
 ];
 
 const BOTTOM: NavDef[] = [
+  { key: "privacy", label: "Privacy", icon: "shield" },
   { key: "shortcuts", label: "Shortcuts", icon: "shortcuts" },
   { key: "settings", label: "Settings", icon: "settings" },
   { key: "help", label: "Help", icon: "help" },
@@ -109,7 +115,8 @@ export function Sidebar({
         width: collapsed ? 74 : 230,
         flex: `0 0 ${collapsed ? 74 : 230}px`,
         minWidth: collapsed ? 74 : 230,
-        overflow: "hidden",
+        overflowY: "auto",
+        overflowX: "hidden",
         borderRight: `1px solid ${theme.border}`,
         background: theme.sidebarBg,
         backgroundImage: theme.sidebarGradient,

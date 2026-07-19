@@ -74,6 +74,22 @@ impl StyleProfile {
     }
 }
 
+/// Context Capsule configuration: the opt-in (default OFF) per-app context
+/// bundle captured at record start (frontmost app, AX-selected text, glossary,
+/// style). Everything defaults to off/empty so existing users see zero change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct CapsuleSettings {
+    /// Master switch. Off = no capsule is ever captured.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Also capture the AX-selected text in the target app (macOS).
+    #[serde(default)]
+    pub include_selection: bool,
+    /// Bundle ids the capsule is limited to. Empty = all apps (when enabled).
+    #[serde(default)]
+    pub apps: Vec<String>,
+}
+
 /// Which cleanup engine processes transcripts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -232,6 +248,30 @@ pub struct Settings {
     /// `#[serde(default)]` keeps older settings.json files loading cleanly.
     #[serde(default)]
     pub style: StyleProfile,
+    /// How many days of dictation text to keep in history. `None` (the default)
+    /// keeps text forever; `Some(0)` never stores text at all. Numeric stats are
+    /// always kept regardless.
+    #[serde(default)]
+    pub retention_days: Option<u32>,
+    /// Context Capsule (opt-in per-app context bundle). Defaults to fully off.
+    #[serde(default)]
+    pub capsule: CapsuleSettings,
+    /// Switch the cleanup prompt to the code-dictation variant when the target
+    /// app is an IDE or terminal. Default on.
+    #[serde(default = "default_true")]
+    pub code_mode_auto: bool,
+    /// Meeting mode: a locked (hands-free) session's transcript is appended to
+    /// Notes instead of pasted. Default off.
+    #[serde(default)]
+    pub meeting_mode: bool,
+    /// Show live provisional text in the FlowBar while recording. Default on.
+    #[serde(default = "default_true")]
+    pub streaming_preview: bool,
+}
+
+/// Serde default for the settings that ship ON (see `default = "default_true"`).
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -247,6 +287,11 @@ impl Default for Settings {
             language: None,
             keybindings: KeyBindings::default(),
             style: StyleProfile::default(),
+            retention_days: None,
+            capsule: CapsuleSettings::default(),
+            code_mode_auto: true,
+            meeting_mode: false,
+            streaming_preview: true,
         }
     }
 }
@@ -435,6 +480,54 @@ mod tests {
             .chars()
             .count();
         assert_eq!(note_len, MAX_STYLE_INSTRUCTIONS_LEN);
+    }
+
+    #[test]
+    fn new_privacy_and_mode_fields_default_correctly_from_old_json() {
+        // Back-compat: a settings.json written before retention/capsule/code
+        // mode/meeting mode/streaming preview existed must still load, with
+        // each field at its designed default.
+        let json = r#"{
+            "cleanup_mode": "local",
+            "cleanup_level": "light",
+            "openai_model": "gpt-4o-mini",
+            "anthropic_model": "claude-haiku-4-5",
+            "sound_on_start": true
+        }"#;
+        let s: Settings = serde_json::from_str(json).unwrap();
+        assert_eq!(s.retention_days, None, "keep text forever by default");
+        assert_eq!(s.capsule, CapsuleSettings::default());
+        assert!(!s.capsule.enabled, "capsule is strictly opt-in");
+        assert!(!s.capsule.include_selection);
+        assert!(s.capsule.apps.is_empty());
+        assert!(s.code_mode_auto, "code mode auto ships ON");
+        assert!(!s.meeting_mode, "meeting mode ships OFF");
+        assert!(s.streaming_preview, "streaming preview ships ON");
+    }
+
+    #[test]
+    fn new_fields_round_trip_non_default_values() {
+        let s = Settings {
+            retention_days: Some(30),
+            capsule: CapsuleSettings {
+                enabled: true,
+                include_selection: true,
+                apps: vec!["com.apple.mail".to_string()],
+            },
+            code_mode_auto: false,
+            meeting_mode: true,
+            streaming_preview: false,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let back: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.retention_days, Some(30));
+        assert!(back.capsule.enabled);
+        assert!(back.capsule.include_selection);
+        assert_eq!(back.capsule.apps, vec!["com.apple.mail".to_string()]);
+        assert!(!back.code_mode_auto);
+        assert!(back.meeting_mode);
+        assert!(!back.streaming_preview);
     }
 
     #[test]
