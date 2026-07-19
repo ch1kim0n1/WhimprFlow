@@ -1,6 +1,6 @@
 # WhimprFlow
 
-A **local-first, cross-platform voice dictation app** — hold a key, speak, and clean text lands wherever your cursor is. Speech is transcribed on-device with Whisper and cleaned up (filler removal, self-corrections, punctuation, lists/newlines) by a local LLM, with an optional cloud path. It re-creates the workflow of a Wispr-Flow-style dictation tool from scratch, with its own name, palette, and code.
+A **local-first, cross-platform voice dictation app**  -  hold a key, speak, and clean text lands wherever your cursor is. Speech is transcribed on-device with Whisper and cleaned up (filler removal, self-corrections, punctuation, lists/newlines) by a local LLM, with an optional cloud path. It re-creates the workflow of a Wispr-Flow-style dictation tool from scratch, with its own name, palette, and code.
 
 > ⚠️ **This is a proof of concept, vibe-coded in a few hours.** It works and the core loop is real, but it is rough and needs a lot of polish, testing, and hardening before it's anything like production quality. Treat it as a starting point, not a finished product.
 
@@ -10,21 +10,21 @@ A **local-first, cross-platform voice dictation app** — hold a key, speak, and
 
 | Platform | Status |
 |----------|--------|
-| **macOS 14+** | **Built and working** — developed and tested locally (Apple Silicon). |
-| **Windows 10/11** | **Built and working** — compiles and runs on real Windows 11 (MSVC). Push-to-talk (hold **Right Ctrl**), Whisper ASR, clipboard+`SendInput` paste, and cloud cleanup (OpenAI or any OpenAI-compatible API, e.g. OpenRouter) are verified end-to-end. Auto-learn dictionary capture is still macOS-only; the local (on-device) LLM cleanup worker builds but is CPU-only for now (no CUDA/Vulkan yet). |
+| **macOS 14+** | **Built and working**  -  developed and tested locally (Apple Silicon). |
+| **Windows 10/11** | **Built and working**  -  compiles and runs on real Windows 11 (MSVC). Push-to-talk (hold **Right Ctrl**), Whisper ASR, clipboard+`SendInput` paste, and cloud cleanup (OpenAI or any OpenAI-compatible API, e.g. OpenRouter) are verified end-to-end. Auto-learn dictionary capture is still macOS-only; the local (on-device) LLM cleanup worker builds but is CPU-only for now (no CUDA/Vulkan yet). |
 
-Both platforms are build-from-source only for now — there's no signed installer/release pipeline yet, so `git clone` + the steps below is the way to run it on either OS.
+Both platforms are build-from-source only for now  -  there's no signed installer/release pipeline yet, so `git clone` + the steps below is the way to run it on either OS.
 
 ---
 
 ## What's in it
 
-- **On-device ASR** — Whisper (via `whisper.cpp`), running on the GPU. Ships a small English model by default; larger models are auto-preferred if present.
-- **Local LLM cleanup** — Qwen3-4B-Instruct (via `llama.cpp`) runs as a separate worker process and cleans the transcript: removes fillers, resolves spoken self-corrections ("meet at 2… no wait, 3" → "3"), applies spoken punctuation, and formats lists/paragraphs. Deterministic gates guard against over-editing, with a raw-transcript fallback.
-- **Optional cloud cleanup** — OpenAI (default) / Anthropic, behind one trait. Keys are stored in the OS keychain (macOS Keychain / Windows Credential Manager), **never in a file**.
-- **Floating pill UI** — a small always-on-top bar showing idle / recording / processing states.
-- **Personal dictionary + auto-learn** — teach it names and terms; on macOS a post-paste Accessibility observer watches for a one-word correction and learns it automatically (conservative filters to avoid junk). *Auto-learn capture is macOS-only so far.*
-- **Usage stats** — words dictated, words-per-minute, day streak, time saved, 7-day activity, all stored locally.
+- **On-device ASR**  -  Whisper (via `whisper.cpp`), running on the GPU. Ships a small English model by default; larger models are auto-preferred if present.
+- **Local LLM cleanup**  -  Qwen3-4B-Instruct (via `llama.cpp`) runs as a separate worker process and cleans the transcript: removes fillers, resolves spoken self-corrections ("meet at 2… no wait, 3" → "3"), applies spoken punctuation, and formats lists/paragraphs. Deterministic gates guard against over-editing, with a raw-transcript fallback.
+- **Optional cloud cleanup**  -  OpenAI (default) / Anthropic, behind one trait. Keys are stored in the OS keychain (macOS Keychain / Windows Credential Manager), **never in a file**.
+- **Floating pill UI**  -  a small always-on-top bar showing idle / recording / processing states.
+- **Personal dictionary + auto-learn**  -  teach it names and terms; on macOS a post-paste Accessibility observer watches for a one-word correction and learns it automatically (conservative filters to avoid junk). *Auto-learn capture is macOS-only so far.*
+- **Usage stats**  -  words dictated, words-per-minute, day streak, time saved, 7-day activity, all stored locally.
 
 ## Architecture
 
@@ -55,13 +55,13 @@ ui/node_modules/.bin/tauri build --bundles app
 ```
 
 Models are **not** committed (they're multi-GB). Place them under
-`~/Library/Application Support/WhimprFlow/models/` (macOS) —
+`~/Library/Application Support/WhimprFlow/models/` (macOS)  - 
 a Whisper `ggml-*.en.bin` and a Qwen GGUF for local cleanup.
 
 ## Build (Windows)
 
 Requires Rust (stable, MSVC toolchain), [CMake](https://cmake.org/download/), LLVM/clang
-(for `bindgen` — set `LIBCLANG_PATH` to its `bin/` dir if it isn't auto-detected), the
+(for `bindgen`  -  set `LIBCLANG_PATH` to its `bin/` dir if it isn't auto-detected), the
 **Visual Studio Build Tools** (Desktop development with C++ workload), and Node + pnpm.
 
 ```powershell
@@ -72,16 +72,16 @@ ui\node_modules\.bin\tauri.CMD dev
 ui\node_modules\.bin\tauri.CMD build
 ```
 
-Place models under `%APPDATA%\WhimprFlow\models\` — a Whisper `ggml-*.en.bin`
+Place models under `%APPDATA%\WhimprFlow\models\`  -  a Whisper `ggml-*.en.bin`
 (e.g. `ggml-base.en.bin` from
 [huggingface.co/ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp))
 and, optionally, a Qwen GGUF for local (offline) cleanup. No local LLM model?
 Set Cleanup Engine to **OpenAI** in the Hub's Settings pane and point the base URL at
-any OpenAI-compatible API — for example `https://openrouter.ai/api/v1` for
+any OpenAI-compatible API  -  for example `https://openrouter.ai/api/v1` for
 [OpenRouter](https://openrouter.ai), with your OpenRouter key pasted into the
 "OpenAI API key" field.
 
-Push-to-talk defaults to **Right Ctrl** (hold to record, release to paste) — the
+Push-to-talk defaults to **Right Ctrl** (hold to record, release to paste)  -  the
 Windows analogue of Wispr Flow's own `Ctrl+Win` default; a configurable hotkey is
 planned but not wired up yet.
 
@@ -97,4 +97,4 @@ and `crates/whimpr-llm-worker/Cargo.toml` for anyone wanting to pick that up.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT  -  see [LICENSE](LICENSE).

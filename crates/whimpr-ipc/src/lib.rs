@@ -1,14 +1,14 @@
-//! `whimpr-ipc` — the shared wire contract between the WhimprFlow Tauri shell and
+//! `whimpr-ipc`  -  the shared wire contract between the WhimprFlow Tauri shell and
 //! the native sidecar process that owns the global hotkey hook, text injection,
 //! secure-input detection, and the accessibility/UI-Automation context read.
 //!
 //! The hook lives out-of-process so that saturating on-device inference (ASR + LLM)
 //! in the main process can never starve the low-level keyboard callback past the
-//! OS timeout — on Windows that removal is silent and unrecoverable, so isolation
+//! OS timeout  -  on Windows that removal is silent and unrecoverable, so isolation
 //! plus a heartbeat/respawn (see [`SidecarToShell::Heartbeat`]) is the whole point.
 //!
 //! Because both ends are Rust, these enums are the single source of truth for the
-//! protocol — there is no code generation step.
+//! protocol  -  there is no code generation step.
 
 pub mod codec;
 
@@ -134,7 +134,7 @@ pub enum TriggerWire {
     Up,
     /// Esc (or the configured cancel key) was pressed.
     Cancel,
-    /// A non-trigger key was pressed while a partial chord was held — abort the chord.
+    /// A non-trigger key was pressed while a partial chord was held  -  abort the chord.
     NormalKeyDuringArm,
 }
 

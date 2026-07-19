@@ -1,4 +1,4 @@
-//! Auto Cleanup levels — how aggressively the LLM is allowed to edit.
+//! Auto Cleanup levels  -  how aggressively the LLM is allowed to edit.
 //!
 //! `None` bypasses the model entirely (raw ASR is pasted). The others append a
 //! modifier to the shared system prompt. Light is WhimprFlow's default: research

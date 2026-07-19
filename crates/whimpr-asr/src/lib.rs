@@ -50,7 +50,7 @@ impl AsrEngine for WhisperEngine {
         params.set_suppress_blank(true);
         // Push-to-talk utterances are always one short clip, not long-form audio.
         // Without this, whisper.cpp can split it into multiple internal segments
-        // that repeat the same words — which then get concatenated below,
+        // that repeat the same words  -  which then get concatenated below,
         // producing the sentence twice. Single-segment mode avoids that.
         params.set_single_segment(true);
         params.set_no_context(true);

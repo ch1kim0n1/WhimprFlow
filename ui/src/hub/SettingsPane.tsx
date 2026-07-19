@@ -2,6 +2,7 @@ import { useState } from "react";
 import { font } from "../tokens/values";
 import { theme } from "./theme";
 import { Button, Card, Dot, PageTitle, Segmented } from "./ui";
+import { Icon, type IconName } from "./icons";
 import {
   requestAccessibility,
   requestInputMonitoring,
@@ -16,7 +17,7 @@ import {
 const MODES: { value: CleanupMode; label: string; hint: string }[] = [
   { value: "raw", label: "Raw", hint: "Paste exactly what you said" },
   { value: "local", label: "Local", hint: "On-device model (offline)" },
-  { value: "open_ai", label: "OpenAI", hint: "Cloud cleanup via OpenAI (or an OpenAI-compatible API like OpenRouter — set the base URL below)" },
+  { value: "open_ai", label: "OpenAI", hint: "Cloud cleanup via OpenAI (or an OpenAI-compatible API like OpenRouter - set the base URL below)" },
   { value: "anthropic", label: "Anthropic", hint: "Cloud cleanup via Claude" },
 ];
 
@@ -27,10 +28,37 @@ const LEVELS: { value: CleanupLevel; label: string; hint: string }[] = [
   { value: "high", label: "High", hint: "Rewrite for brevity and polish." },
 ];
 
-function SectionTitle({ children, sub }: { children: React.ReactNode; sub?: string }) {
+function SectionTitle({
+  children,
+  sub,
+  icon,
+}: {
+  children: React.ReactNode;
+  sub?: string;
+  icon?: IconName;
+}) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 15, fontWeight: 600, color: theme.textStrong }}>{children}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: theme.textStrong }}>
+        {icon && (
+          <span
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 8,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: theme.accentSoft,
+              color: theme.accentDeep,
+              flex: "0 0 auto",
+            }}
+          >
+            <Icon name={icon} size={13} strokeWidth={1.8} />
+          </span>
+        )}
+        <span>{children}</span>
+      </div>
       {sub && <div style={{ color: theme.textMuted, fontSize: 13, marginTop: 4 }}>{sub}</div>}
     </div>
   );
@@ -51,7 +79,7 @@ function KeyField({
     <div style={{ marginTop: 16 }}>
       <div style={{ fontSize: 13, marginBottom: 7, display: "flex", alignItems: "center", color: theme.textBody }}>
         <Dot ok={configured} />
-        {label} {configured ? "— configured" : "— not set"}
+        {label} {configured ? " - configured" : " - not set"}
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <input
@@ -93,19 +121,36 @@ function PermRow({
   ok,
   label,
   detail,
+  icon,
   onClick,
 }: {
   ok: boolean;
   label: string;
   detail: string;
+  icon: IconName;
   onClick: () => void;
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", fontSize: 13 }}>
-        <Dot ok={ok} />
+        <span
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: 8,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: ok ? theme.accentSoft : theme.cardBgSubtle,
+            color: ok ? theme.accentDeep : theme.textMuted,
+            marginRight: 8,
+            flex: "0 0 auto",
+          }}
+        >
+          <Icon name={ok ? "check" : icon} size={13} strokeWidth={1.8} />
+        </span>
         <span style={{ color: theme.textBody }}>
-          <b>{label}</b> <span style={{ color: theme.textMuted }}>— {detail}</span>
+          <b>{label}</b> <span style={{ color: theme.textMuted }}> - {detail}</span>
         </span>
       </div>
       {ok ? (
@@ -135,7 +180,9 @@ export function SettingsPane({
       <PageTitle>Settings</PageTitle>
 
       <Card style={{ marginBottom: 16 }}>
-        <SectionTitle sub="Where your dictation is cleaned up before it's typed.">Cleanup Engine</SectionTitle>
+        <SectionTitle icon="cloud" sub="Where your dictation is cleaned up before it's typed.">
+          Cleanup Engine
+        </SectionTitle>
         <Segmented
           options={MODES.map((m) => ({ value: m.value, label: m.label }))}
           value={settings.cleanup_mode}
@@ -212,7 +259,7 @@ export function SettingsPane({
       </Card>
 
       <Card style={{ marginBottom: 16 }}>
-        <SectionTitle>Auto Cleanup</SectionTitle>
+        <SectionTitle icon="sparkles">Auto Cleanup</SectionTitle>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {LEVELS.map((l) => {
             const selected = settings.cleanup_level === l.value;
@@ -241,7 +288,8 @@ export function SettingsPane({
 
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: theme.textStrong }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, color: theme.textStrong }}>
+            <Icon name="keyboard" size={16} strokeWidth={1.8} />
             Play a sound when recording starts
           </div>
           <Segmented
@@ -256,17 +304,18 @@ export function SettingsPane({
       </Card>
 
       <Card>
-        <SectionTitle sub="Grant these to WhimprFlow, then quit and reopen the app if a dot stays grey.">
+        <SectionTitle icon="shield" sub="Grant these to WhimprFlow, then quit and reopen the app if a dot stays grey.">
           Permissions
         </SectionTitle>
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <PermRow
+            icon="lock"
             ok={status.accessibility}
             label="Accessibility"
             detail={
               status.accessibility
-                ? "granted — Fn works everywhere + types your words"
-                : "the key one: makes Fn work in EVERY app AND types your words"
+                ? "granted - Fn works everywhere + types your words"
+                : "the key one: makes Fn work in every app and types your words"
             }
             onClick={() => {
               requestAccessibility();
@@ -274,6 +323,7 @@ export function SettingsPane({
             }}
           />
           <PermRow
+            icon="mic"
             ok={status.microphone}
             label="Microphone"
             detail={status.microphone ? "granted" : "hears what you say"}
@@ -283,9 +333,10 @@ export function SettingsPane({
             }}
           />
           <PermRow
+            icon="shield"
             ok={status.input_monitoring}
             label="Input Monitoring"
-            detail="optional — extra reliability for key detection"
+            detail="optional - extra reliability for key detection"
             onClick={() => {
               requestInputMonitoring();
               setTimeout(refresh, 1000);

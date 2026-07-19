@@ -136,8 +136,20 @@ function EntryRow({ entry, onRemove }: { entry: DictEntry; onRemove: () => void 
       <div style={{ minWidth: 0 }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: theme.textStrong }}>{entry.correct}</span>
         {entry.auto && (
-          <span title="Auto-learned" style={{ marginLeft: 6, fontSize: 13 }}>
-            ✨
+          <span
+            title="Auto-learned"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 16,
+              height: 16,
+              marginLeft: 6,
+              color: theme.accentDeep,
+              verticalAlign: "middle",
+            }}
+          >
+            <Icon name="sparkles" size={13} strokeWidth={1.8} />
           </span>
         )}
         {entry.mishears.length > 0 && (

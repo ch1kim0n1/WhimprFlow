@@ -5,15 +5,55 @@
 export type CleanupMode = "raw" | "local" | "open_ai" | "anthropic";
 export type CleanupLevel = "none" | "light" | "medium" | "high";
 
+// Mirrors whimpr-core's Key enum, serialized via serde's adjacently-tagged
+// representation: {"kind":"char","value":"V"} or {"kind":"escape"}.
+export type KeyJson = { kind: "char"; value: string } | { kind: "escape" };
+
+// Mirrors whimpr-core's Chord: one modifier combination bound to a rebindable
+// action (checked on a plain KeyDown, not a hold gesture).
+export interface ChordJson {
+  meta: boolean;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  key: KeyJson;
+}
+
+// Mirrors whimpr-core's KeyBindings: the four shortcuts safe to rebind.
+export interface KeyBindings {
+  cancel: ChordJson;
+  paste_last: ChordJson;
+  copy_last: ChordJson;
+  undo_last: ChordJson;
+}
+
+// Mirrors whimpr-core's Formality enum.
+export type Formality = "casual" | "neutral" | "formal";
+
+// Mirrors whimpr-core's StyleProfile: personal writing style applied to cleanup
+// output as presentation guidance (tone/formality/free-text note).
+export interface StyleProfile {
+  formality: Formality;
+  custom_instructions: string;
+}
+
+// Keep in sync with whimpr-core's MAX_STYLE_INSTRUCTIONS_LEN.
+export const MAX_STYLE_INSTRUCTIONS_LEN = 600;
+
 export interface Settings {
   cleanup_mode: CleanupMode;
   cleanup_level: CleanupLevel;
   openai_model: string;
-  // API root for "OpenAI" mode — leave blank for OpenAI itself, or point at
-  // an OpenAI-compatible endpoint like OpenRouter (https://openrouter.ai/api/v1).
+  // API root for "OpenAI" mode; leave blank for OpenAI itself, or point at an
+  // OpenAI-compatible endpoint like OpenRouter (https://openrouter.ai/api/v1).
   openai_base_url: string;
   anthropic_model: string;
   sound_on_start: boolean;
+  // ASR language, as a whisper.cpp language code (e.g. "en", "es"). null means
+  // auto-detect.
+  language: string | null;
+  keybindings: KeyBindings;
+  style: StyleProfile;
 }
 
 export interface Status {
@@ -50,6 +90,20 @@ export const EMPTY_STATS: StatsSummary = {
   last7_words: [0, 0, 0, 0, 0, 0, 0],
 };
 
+// Browser-preview fallback only; the real app always loads the platform's actual
+// bindings from the backend. Mirrors whimpr-core's macOS default.
+export const DEFAULT_KEYBINDINGS: KeyBindings = {
+  cancel: { meta: false, ctrl: false, alt: false, shift: false, key: { kind: "escape" } },
+  paste_last: { meta: true, ctrl: false, alt: false, shift: true, key: { kind: "char", value: "V" } },
+  copy_last: { meta: true, ctrl: false, alt: false, shift: true, key: { kind: "char", value: "C" } },
+  undo_last: { meta: true, ctrl: false, alt: false, shift: true, key: { kind: "char", value: "Z" } },
+};
+
+export const DEFAULT_STYLE: StyleProfile = {
+  formality: "neutral",
+  custom_instructions: "",
+};
+
 export const DEFAULT_SETTINGS: Settings = {
   cleanup_mode: "open_ai",
   cleanup_level: "light",
@@ -57,6 +111,9 @@ export const DEFAULT_SETTINGS: Settings = {
   openai_base_url: "",
   anthropic_model: "claude-haiku-4-5",
   sound_on_start: true,
+  language: null,
+  keybindings: DEFAULT_KEYBINDINGS,
+  style: DEFAULT_STYLE,
 };
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -76,7 +133,7 @@ export async function setSettings(settings: Settings): Promise<void> {
   try {
     await invoke<void>("set_settings", { settings });
   } catch {
-    /* browser preview — no-op */
+    /* browser preview  no-op */
   }
 }
 
@@ -135,7 +192,7 @@ export async function setApiKey(provider: "openai" | "anthropic", key: string): 
   }
 }
 
-// ── History ────────────────────────────────────────────────────────────────
+// History
 export interface HistoryItem {
   ts_unix: number;
   text: string;
@@ -151,7 +208,7 @@ export async function getHistory(): Promise<HistoryItem[]> {
   }
 }
 
-// ── Dictionary ───────────────────────────────────────────────────────────────
+// Dictionary
 export interface DictEntry {
   correct: string;
   mishears: string[];
@@ -170,7 +227,7 @@ export async function addDictionaryEntry(correct: string, mishears: string[]): P
   try {
     await invoke<void>("add_dictionary_entry", { correct, mishears });
   } catch {
-    /* browser preview — no-op */
+    /* browser preview  no-op */
   }
 }
 
@@ -178,7 +235,53 @@ export async function removeDictionaryEntry(correct: string): Promise<void> {
   try {
     await invoke<void>("remove_dictionary_entry", { correct });
   } catch {
-    /* browser preview — no-op */
+    /* browser preview  no-op */
   }
 }
 
+// Snippets
+export interface SnippetEntry {
+  trigger: string;
+  expansion: string;
+}
+
+export async function getSnippets(): Promise<SnippetEntry[]> {
+  try {
+    return await invoke<SnippetEntry[]>("get_snippets");
+  } catch {
+    return [];
+  }
+}
+
+export async function addSnippet(trigger: string, expansion: string): Promise<void> {
+  try {
+    await invoke<void>("add_snippet", { trigger, expansion });
+  } catch {
+    /* browser preview  no-op */
+  }
+}
+
+export async function removeSnippet(trigger: string): Promise<void> {
+  try {
+    await invoke<void>("remove_snippet", { trigger });
+  } catch {
+    /* browser preview  no-op */
+  }
+}
+
+// Backup: user-initiated one-off action; surfaces real success/failure.
+export async function backupData(): Promise<string> {
+  return invoke<string>("backup_data");
+}
+
+// Command Mode (manual test hook): runs the instruction-following rewrite
+// against selection through the configured provider. macOS-only; rejects elsewhere.
+export async function testCommandEdit(selection: string, instruction: string): Promise<string> {
+  return invoke<string>("test_command_edit", { selection, instruction });
+}
+
+// Transforms: rewrites text per a canned instruction through the configured
+// cleanup provider (reuses the Command Mode path). macOS-only; rejects elsewhere.
+export async function runTransform(text: string, instruction: string): Promise<string> {
+  return invoke<string>("run_transform", { text, instruction });
+}

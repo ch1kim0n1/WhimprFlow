@@ -1,4 +1,4 @@
-//! `whimpr-core` — the platform-agnostic brain of WhimprFlow.
+//! `whimpr-core`  -  the platform-agnostic brain of WhimprFlow.
 //!
 //! Everything here is shared verbatim between macOS and Windows. Native concerns
 //! (the hotkey hook, text injection, accessibility reads) live in the sidecar; the

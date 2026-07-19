@@ -1,13 +1,13 @@
 //! Frontmost-app detection: which app is the paste target right now, so the
 //! cleanup layer can format the output for the medium (email vs. text vs. chat).
 //!
-//! On macOS this reads `NSWorkspace.frontmostApplication` — the identity of the
+//! On macOS this reads `NSWorkspace.frontmostApplication`  -  the identity of the
 //! focused app is public information and needs **no** extra TCC permission
 //! (unlike reading the window's text, which would need Accessibility). The pill
 //! overlay is non-activating, so the app the user is dictating into stays
 //! frontmost; we capture its bundle id at record-start (Fn down).
 
-/// Bundle id of the frontmost application — the paste target — e.g.
+/// Bundle id of the frontmost application  -  the paste target  -  e.g.
 /// `com.apple.mail`. Returns `None` when it can't be determined or when
 /// WhimprFlow itself is frontmost (so we don't format for our own Hub window).
 #[cfg(target_os = "macos")]

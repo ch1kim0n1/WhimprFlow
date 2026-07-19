@@ -1,4 +1,4 @@
-//! WhimprFlow sidecar — basic Fn (Globe) key detector for macOS.
+//! WhimprFlow sidecar  -  basic Fn (Globe) key detector for macOS.
 //!
 //! This is the first, deliberately minimal cut of the native hotkey hook: it
 //! installs a *listen-only* CoreGraphics event tap on flagsChanged events and
@@ -6,7 +6,7 @@
 //! does not suppress the key (so the system Globe action still fires during the
 //! test); the production hook will use a consuming tap to swallow the bare-Fn
 //! action. The point of this build is to validate, on real hardware, that we can
-//! globally observe the Fn key at all — everything downstream depends on it.
+//! globally observe the Fn key at all  -  everything downstream depends on it.
 //!
 //! It auto-exits with success after 3 Fn presses, or times out after 60s.
 //!
@@ -74,10 +74,10 @@ const K_CG_HEAD_INSERT: u32 = 0; // kCGHeadInsertEventTap
 const K_CG_TAP_OPTION_LISTEN_ONLY: u32 = 1;
 const K_CG_EVENT_FLAGS_CHANGED: u32 = 12;
 const EVENTS_OF_INTEREST: u64 = 1 << K_CG_EVENT_FLAGS_CHANGED;
-/// kCGEventFlagMaskSecondaryFn — set while the Fn/Globe key is held.
+/// kCGEventFlagMaskSecondaryFn  -  set while the Fn/Globe key is held.
 const FLAG_SECONDARY_FN: u64 = 0x0080_0000;
 const K_CG_KEYBOARD_EVENT_KEYCODE: u32 = 9;
-/// kVK_Function — the Fn/Globe key's virtual keycode.
+/// kVK_Function  -  the Fn/Globe key's virtual keycode.
 const KEYCODE_FN: i64 = 63;
 // Event types signalling the tap was disabled and must be re-enabled.
 const K_CG_TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFF_FFFE;
@@ -121,7 +121,7 @@ extern "C" fn tap_callback(
 }
 
 pub fn run() {
-    println!("WhimprFlow — Fn (Globe) key detection test");
+    println!("WhimprFlow  -  Fn (Globe) key detection test");
     println!("------------------------------------------");
 
     let port = unsafe {
@@ -162,13 +162,13 @@ pub fn run() {
         unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.25, false) };
         if FN_DOWN_COUNT.load(Ordering::SeqCst) >= 3 {
             println!();
-            println!("TEST PASSED  — detected 3 Fn presses. The Fn key hook works on this machine.");
+            println!("TEST PASSED   -  detected 3 Fn presses. The Fn key hook works on this machine.");
             std::process::exit(0);
         }
         if start.elapsed().as_secs() >= 60 {
             let n = FN_DOWN_COUNT.load(Ordering::SeqCst);
             println!();
-            println!("TIMEOUT — only detected {n} Fn press(es) in 60s.");
+            println!("TIMEOUT  -  only detected {n} Fn press(es) in 60s.");
             println!("If it was 0, the listener likely lacks Input Monitoring permission.");
             std::process::exit(1);
         }

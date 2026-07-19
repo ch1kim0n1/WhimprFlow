@@ -23,7 +23,7 @@ async function tauriListen<T>(event: string, cb: (payload: T) => void): Promise<
   }
 }
 
-// A row of dot-like rounded bars driven by mic RMS — Wispr's dotted-waveform look:
+// A row of dot-like rounded bars driven by mic RMS  -  Wispr's dotted-waveform look:
 // small dots when quiet, rising into a waveform when speaking.
 function DottedWaveform({ bars }: { bars: number[] }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);

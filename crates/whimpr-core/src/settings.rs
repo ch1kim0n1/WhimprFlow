@@ -13,7 +13,7 @@ use crate::cleanup::CleanupLevel;
 pub enum CleanupMode {
     /// Paste the raw transcript (no cleanup).
     Raw,
-    /// Local on-device model (default — works offline, no API key).
+    /// Local on-device model (default  -  works offline, no API key).
     #[default]
     Local,
     /// OpenAI cloud.

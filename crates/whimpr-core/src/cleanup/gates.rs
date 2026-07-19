@@ -1,4 +1,4 @@
-//! Deterministic cleanup gates — the cheap, always-on guard against the LLM
+//! Deterministic cleanup gates  -  the cheap, always-on guard against the LLM
 //! over-editing or hallucinating. They run on every cleanup output before it is
 //! committed; on any failure the caller falls back to the raw transcript (or,
 //! optionally, an LLM verifier pass). This is the anti-over-editing safety net.
@@ -12,9 +12,9 @@ pub enum GateReason {
     EditRatioTooHigh { ratio: f32, ceiling: f32 },
     /// A must-preserve token (number, URL, email, code-ish token) vanished.
     LostEntity(String),
-    /// Output shrank more than 40% — likely dropped content.
+    /// Output shrank more than 40%  -  likely dropped content.
     OverDeletion { shrink: f32 },
-    /// Output grew beyond punctuation — likely added content.
+    /// Output grew beyond punctuation  -  likely added content.
     Hallucination,
     /// A banned pattern (added greeting/sign-off or an assistant-style reply) appeared.
     BannedPattern(String),
@@ -73,7 +73,7 @@ pub fn evaluate(raw: &str, cleaned: &str, level: CleanupLevel) -> GateVerdict {
 
     // 3) Gross length changes. Thresholds are generous: self-corrections shorten
     // text and structural formatting (numbered lists, paragraph breaks, list
-    // markers) lengthens it — both are legitimate, so only flag extreme changes.
+    // markers) lengthens it  -  both are legitimate, so only flag extreme changes.
     let raw_len = raw.chars().count().max(1) as f32;
     let clean_len = cleaned.chars().count() as f32;
     let shrink = (raw_len - clean_len) / raw_len;
@@ -96,7 +96,7 @@ pub fn evaluate(raw: &str, cleaned: &str, level: CleanupLevel) -> GateVerdict {
 }
 
 /// Tokens that must survive cleanup verbatim: URLs, emails, and *substantial*
-/// digit strings (phone numbers, account/order ids, years, versions — 4+ digits).
+/// digit strings (phone numbers, account/order ids, years, versions  -  4+ digits).
 /// Short numbers (1–3 digits) are deliberately NOT protected: they are routinely
 /// and correctly dropped by self-corrections ("meet at 2, actually 3") and by
 /// number normalization, and protecting them made the gate reject legitimate
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn light_cleanup_passes() {
-        // Filler removal + punctuation — a legitimate Light edit.
+        // Filler removal + punctuation  -  a legitimate Light edit.
         let raw = "um so i think we should uh meet at 3";
         let clean = "So I think we should meet at 3.";
         assert!(evaluate(raw, clean, CleanupLevel::Light).passed());

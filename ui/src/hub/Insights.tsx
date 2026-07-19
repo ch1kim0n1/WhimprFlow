@@ -215,7 +215,7 @@ function Tabs({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
 function UsageTab({ stats }: { stats: StatsSummary }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      {/* Top row — three stat cards */}
+      {/* Top row  -  three stat cards */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 18 }}>
         <StatCard label="Words per minute" foot="Top 5% of dictators">
           <Gauge value={stats.avg_wpm} max={140} />
@@ -230,7 +230,7 @@ function UsageTab({ stats }: { stats: StatsSummary }) {
         </StatCard>
       </div>
 
-      {/* Bottom row — activity + streak */}
+      {/* Bottom row  -  activity + streak */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 18 }}>
         <Card style={{ flex: "1 1 340px", minWidth: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 16 }}>
@@ -266,7 +266,7 @@ function VoiceTab() {
         </div>
         <p style={{ color: theme.textMuted, fontSize: 14, lineHeight: 1.55, maxWidth: 420, margin: "10px auto 0" }}>
           Tone, pace, and filler-word insights are on the way. As you dictate, WhimprFlow will surface
-          patterns in how you speak — right here.
+          patterns in how you speak  -  right here.
         </p>
       </div>
     </Card>

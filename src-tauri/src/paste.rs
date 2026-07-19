@@ -1,6 +1,6 @@
 //! Text insertion: deliver transcribed/cleaned text to the frontmost app.
 //!
-//! First rung of the insertion ladder — clipboard paste: save the current
+//! First rung of the insertion ladder  -  clipboard paste: save the current
 //! clipboard, write our text, synthesize Cmd+V, then restore the clipboard. This
 //! is the universal path that works in almost every app. (AX direct-insert and the
 //! terminal/secure-input handling from the plan layer on later, in the sidecar.)
@@ -26,7 +26,7 @@ mod imp {
         ) -> CGEventRef;
         fn CGEventSetFlags(event: CGEventRef, flags: u64);
         fn CGEventPost(tap: u32, event: CGEventRef);
-        /// Whether the app has Input Monitoring (listen-event) access — required for
+        /// Whether the app has Input Monitoring (listen-event) access  -  required for
         /// the Fn key tap to see keystrokes globally, not just while we're frontmost.
         fn CGPreflightListenEventAccess() -> bool;
         /// Request Input Monitoring access: registers the app in the list and prompts.
@@ -98,7 +98,7 @@ mod imp {
         use arboard::Clipboard;
         if !is_trusted() {
             return Err(anyhow::anyhow!(
-                "no Accessibility permission — cannot paste (grant it in System Settings → \
+                "no Accessibility permission  -  cannot paste (grant it in System Settings → \
                  Privacy & Security → Accessibility, then relaunch)"
             ));
         }

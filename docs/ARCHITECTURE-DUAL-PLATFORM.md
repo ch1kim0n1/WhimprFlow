@@ -1,8 +1,8 @@
-# WhimprFlow — Dual-Platform Architecture (Windows + macOS)
+# WhimprFlow  -  Dual-Platform Architecture (Windows + macOS)
 
 > Synthesized 2026-07-17 from a 12-agent all-Opus workflow (7 recon tracks, critic, 3 gap-fills, synthesis): dual-platform stack evaluation, a teardown of Wispr Flow's actual Windows build, Windows hotkey/insertion/shell engineering, and cross-platform ASR + LLM benchmarks by hardware tier. Raw tracks in docs/research/win-*.md and docs/research/xplat-*.md.
 >
-> **This supersedes the "fully native Swift" decision in SPEC.md.** SPEC.md's UI spec, Fn state machine, cleanup rule table, prompts, and feature matrix are unchanged in intent — only the implementation substrate moves to Tauri v2 + a shared Rust core. Read this alongside SPEC.md; the "Deltas" section below lists exactly what changes.
+> **This supersedes the "fully native Swift" decision in SPEC.md.** SPEC.md's UI spec, Fn state machine, cleanup rule table, prompts, and feature matrix are unchanged in intent  -  only the implementation substrate moves to Tauri v2 + a shared Rust core. Read this alongside SPEC.md; the "Deltas" section below lists exactly what changes.
 
 
 ---

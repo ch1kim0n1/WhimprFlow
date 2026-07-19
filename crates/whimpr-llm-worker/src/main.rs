@@ -55,7 +55,7 @@ fn main() -> anyhow::Result<()> {
         .context("model path required (argv[1] or WHIMPR_LLM_MODEL)")?;
 
     let backend = LlamaBackend::init()?;
-    // Offload everything to the Apple GPU (Metal) — capped by what fits.
+    // Offload everything to the Apple GPU (Metal)  -  capped by what fits.
     let model_params = LlamaModelParams::default().with_n_gpu_layers(999);
     let model = LlamaModel::load_from_file(&backend, &model_path, &model_params)
         .with_context(|| format!("failed to load model {model_path}"))?;

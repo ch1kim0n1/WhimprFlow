@@ -6,8 +6,8 @@
 //! ⚠️ UNVERIFIED: this module was written on macOS and has **never been compiled or
 //! run on Windows**. The shared crates (audio, ASR, cleanup, core) are
 //! cross-platform, but this Win32 glue will almost certainly need fixes before it
-//! builds and runs. It is `cfg(target_os = "windows")` so it does not affect — and
-//! is not checked by — the macOS build. Treat it as a starting point, not a
+//! builds and runs. It is `cfg(target_os = "windows")` so it does not affect  -  and
+//! is not checked by  -  the macOS build. Treat it as a starting point, not a
 //! shipping port. Default push-to-talk key: Right Ctrl.
 
 #![cfg(target_os = "windows")]
@@ -96,7 +96,7 @@ fn emit_bar(state: &'static str) {
 }
 
 /// The foreground process's executable name (e.g. "chrome.exe"), for per-app
-/// cleanup formatting — the Windows analogue of the macOS bundle id.
+/// cleanup formatting  -  the Windows analogue of the macOS bundle id.
 fn foreground_app() -> Option<String> {
     unsafe {
         let hwnd: HWND = GetForegroundWindow();

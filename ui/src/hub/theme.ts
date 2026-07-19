@@ -1,5 +1,5 @@
 // Light "Hub" theme, layered on top of the shared design tokens. This governs
-// only the desktop Hub window — the floating overlay pill stays on its own dark
+// only the desktop Hub window  -  the floating overlay pill stays on its own dark
 // palette. We match Wispr's LIGHT Hub layout but with OUR teal accent + warm
 // neutral surfaces (never Wispr's green).
 
@@ -24,7 +24,7 @@ export const theme = {
   textMuted: palette.slate500,
   textFaint: palette.slate400,
 
-  // Accent (teal/cyan — OUR trade dress)
+  // Accent (teal/cyan  -  OUR trade dress)
   accent: palette.accent500,
   accentDeep: palette.accent600,
   accentBright: palette.accent400,

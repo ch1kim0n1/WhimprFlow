@@ -2,7 +2,7 @@
 //!
 //! Runs as a macOS accessory (menu-bar) app: a tray item, a transparent
 //! always-on-top Flow Bar overlay, and a hidden Hub window. This is the M0
-//! skeleton — the sidecar supervisor, real state-machine bridge, and native
+//! skeleton  -  the sidecar supervisor, real state-machine bridge, and native
 //! panel promotion arrive in later milestones. The overlay already listens for
 //! `whimpr://flowbar/state`, so the tray demo items prove the event pipeline.
 
@@ -39,7 +39,7 @@ fn position_overlay(w: &WebviewWindow) {
         .or_else(|| w.current_monitor().ok().flatten())
         .or_else(|| w.available_monitors().ok().and_then(|m| m.into_iter().next()));
     let Some(monitor) = monitor else {
-        eprintln!("[whimpr] no monitor found — overlay stays at default position");
+        eprintln!("[whimpr] no monitor found  -  overlay stays at default position");
         return;
     };
     let scale = monitor.scale_factor();
@@ -184,7 +184,7 @@ fn request_microphone() {
     }
 }
 
-/// Request Accessibility — the permission that makes the Fn key work in every app and
+/// Request Accessibility  -  the permission that makes the Fn key work in every app and
 /// lets us type into other apps. Fire the native prompt, then open the pane.
 #[tauri::command]
 fn request_accessibility() {
@@ -219,7 +219,7 @@ fn set_api_key(provider: String, key: String) -> Result<(), String> {
         keyring::Entry::new("com.whimpr.whimprflow", account).map_err(|e| e.to_string())?;
     let key = key.trim();
     // Delete any existing item first so the new one is created by (and readable to)
-    // this app — a key added via the `security` CLI isn't readable by the app.
+    // this app  -  a key added via the `security` CLI isn't readable by the app.
     let _ = entry.delete_credential();
     if !key.is_empty() {
         entry.set_password(key).map_err(|e| e.to_string())?;

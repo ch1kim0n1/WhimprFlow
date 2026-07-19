@@ -14,7 +14,7 @@ pub enum TriggerToken {
     Down { binding: BindingId, at_ms: u64 },
     /// A bound chord was released.
     Up { binding: BindingId, at_ms: u64 },
-    /// The cancel key (Esc) was pressed — valid in any state, ignoring modifiers.
+    /// The cancel key (Esc) was pressed  -  valid in any state, ignoring modifiers.
     Cancel { at_ms: u64 },
     /// A non-trigger key interrupted a partially-held chord; abort it.
     NormalKeyDuringArm,

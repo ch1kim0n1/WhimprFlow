@@ -1,6 +1,6 @@
 //! Auto-learn: after WhimprFlow pastes dictated text, watch the focused text field
 //! for a few seconds. If the user corrects a single distinctive word (typically a
-//! mis-heard name), diff it out and add it to the dictionary — so next time ASR/
+//! mis-heard name), diff it out and add it to the dictionary  -  so next time ASR/
 //! cleanup spell it right. This is the signal source Wispr's ✨ sparkle needs.
 //!
 //! It is deliberately conservative: it only learns on a clean one-word substitution
@@ -76,7 +76,7 @@ mod imp {
         }
     }
 
-    /// Copy the system-wide focused UI element (retained — caller CFReleases it).
+    /// Copy the system-wide focused UI element (retained  -  caller CFReleases it).
     unsafe fn copy_focused_element() -> AXUIElementRef {
         let system = AXUIElementCreateSystemWide();
         if system.is_null() {
@@ -165,7 +165,7 @@ pub fn word_tokens(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// Very common words we never learn as a "correction" — avoids dictionary poisoning
+/// Very common words we never learn as a "correction"  -  avoids dictionary poisoning
 /// from ordinary edits (their/there, your/you're, then/than, sentence rewording…).
 const COMMON: &[&str] = &[
     "the", "and", "for", "are", "but", "not", "you", "your", "youre", "with", "this", "that",

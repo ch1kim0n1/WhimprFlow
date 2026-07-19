@@ -4,7 +4,7 @@
 //! key-up into the real [`whimpr_core`] dictation state machine, and turns the
 //! machine's actions into `whimpr://flowbar/state` events the overlay pill
 //! renders. There is no audio or ASR yet, so a finalized session is simulated as
-//! completing shortly after key release — enough to see the full
+//! completing shortly after key release  -  enough to see the full
 //! recording → transcribing → done → idle loop driven by the actual state machine.
 //!
 //! In the shipping product this hook lives in a separate sidecar process (so heavy
@@ -327,7 +327,7 @@ mod imp {
             return raw.to_string();
         }
         // Turn explicit spoken layout cues ("new line", "new paragraph") into break
-        // markers up front — the model passes an opaque marker through reliably but
+        // markers up front  -  the model passes an opaque marker through reliably but
         // mangles the literal cue words. The model sees `raw` (with markers); the gate
         // and any raw fallback use `raw_out` (markers restored to real breaks) so we
         // never paste a "[[NL]]" token or lose an explicit break.
@@ -361,7 +361,7 @@ mod imp {
             })
         };
         // Selected provider, falling back to local when a cloud key can't be read
-        // (so cleanup still runs) — and Local mode uses the worker directly.
+        // (so cleanup still runs)  -  and Local mode uses the worker directly.
         let result: Option<anyhow::Result<String>> = match settings.cleanup_mode {
             CleanupMode::OpenAi => OPENAI
                 .get()
@@ -383,19 +383,19 @@ mod imp {
                 if whimpr_core::cleanup::evaluate_gates(&raw_out, &cleaned, level).passed() {
                     cleaned
                 } else {
-                    eprintln!("[whimpr] cleanup gate rejected the edit — pasting raw");
+                    eprintln!("[whimpr] cleanup gate rejected the edit  -  pasting raw");
                     raw_out
                 }
             }
             Some(Err(e)) => {
-                eprintln!("[whimpr] cleanup failed ({e}) — pasting raw");
+                eprintln!("[whimpr] cleanup failed ({e})  -  pasting raw");
                 raw_out
             }
             None => {
                 if matches!(settings.cleanup_mode, CleanupMode::Local) {
-                    eprintln!("[whimpr] local cleanup model not wired yet — pasting raw");
+                    eprintln!("[whimpr] local cleanup model not wired yet  -  pasting raw");
                 } else {
-                    eprintln!("[whimpr] cleanup provider has no API key — pasting raw");
+                    eprintln!("[whimpr] cleanup provider has no API key  -  pasting raw");
                 }
                 raw_out
             }
@@ -493,7 +493,7 @@ mod imp {
                     );
                     if peak < 0.005 {
                         eprintln!(
-                            "[whimpr] ⚠ audio is silent — the mic isn't being captured. Grant \
+                            "[whimpr] ⚠ audio is silent  -  the mic isn't being captured. Grant \
                              Microphone access to your terminal (System Settings → Privacy & \
                              Security → Microphone), then fully quit + reopen it and rerun."
                         );
@@ -604,7 +604,7 @@ mod imp {
             match whimpr_asr::WhisperEngine::load(&path) {
                 Ok(engine) => {
                     let _ = ASR.set(Arc::new(engine));
-                    eprintln!("[whimpr] ASR model loaded — ready to transcribe");
+                    eprintln!("[whimpr] ASR model loaded  -  ready to transcribe");
                 }
                 Err(e) => eprintln!("[whimpr] ASR model load failed: {e}"),
             }
@@ -631,18 +631,18 @@ mod imp {
 
         // Accessibility is the ONE permission that makes the Fn CGEventTap global AND
         // lets us post the Cmd+V paste into other apps. Without it, a keyboard tap is
-        // silently limited to frontmost-only — the exact bug. Prompt for it up front.
+        // silently limited to frontmost-only  -  the exact bug. Prompt for it up front.
         if crate::paste::is_trusted() {
-            eprintln!("[whimpr] Accessibility granted — Fn works in every app, paste enabled");
+            eprintln!("[whimpr] Accessibility granted  -  Fn works in every app, paste enabled");
         } else {
             eprintln!(
-                "[whimpr] ⚠ Accessibility NOT granted — Fn only works while WhimprFlow is \
+                "[whimpr] ⚠ Accessibility NOT granted  -  Fn only works while WhimprFlow is \
                  frontmost and paste is disabled. Prompting; grant WhimprFlow under System \
                  Settings → Privacy & Security → Accessibility (no relaunch needed)."
             );
             crate::paste::prompt_accessibility();
         }
-        // Input Monitoring is NOT the gate for a CGEventTap — kept only as diagnostics.
+        // Input Monitoring is NOT the gate for a CGEventTap  -  kept only as diagnostics.
         eprintln!(
             "[whimpr] (info) Input Monitoring: {}",
             crate::paste::input_monitoring_granted()
@@ -656,7 +656,7 @@ mod imp {
 
         // The event tap runs on a thread with its own CFRunLoop. CRITICAL: create it
         // ONLY after the process is trusted for Accessibility. macOS fixes a keyboard
-        // tap's privilege at CGEventTapCreate time — a tap born untrusted is
+        // tap's privilege at CGEventTapCreate time  -  a tap born untrusted is
         // permanently frontmost-only and is NOT upgraded when the grant later arrives.
         // Polling here also means the Fn key starts working the moment the user grants
         // Accessibility, without a relaunch.
@@ -664,7 +664,7 @@ mod imp {
             while !crate::paste::is_trusted() {
                 std::thread::sleep(Duration::from_millis(500));
             }
-            eprintln!("[whimpr] Accessibility present — creating global Fn tap");
+            eprintln!("[whimpr] Accessibility present  -  creating global Fn tap");
             let port = unsafe {
                 CGEventTapCreate(
                     K_CG_SESSION_EVENT_TAP,
@@ -677,7 +677,7 @@ mod imp {
             };
             if port.is_null() {
                 eprintln!(
-                    "[whimpr] Fn tap null despite Accessibility — likely a stale TCC entry from \
+                    "[whimpr] Fn tap null despite Accessibility  -  likely a stale TCC entry from \
                      an earlier build. Run: tccutil reset Accessibility com.whimpr.whimprflow, \
                      then re-grant and relaunch."
                 );

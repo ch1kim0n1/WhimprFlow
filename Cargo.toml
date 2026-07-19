@@ -1,4 +1,4 @@
-# WhimprFlow — Cargo workspace root.
+# WhimprFlow  -  Cargo workspace root.
 # Members are added as each crate is scaffolded (a workspace may only list dirs that exist).
 [workspace]
 resolver = "2"

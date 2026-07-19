@@ -4,7 +4,7 @@
 # TRACK: Local ASR Stack for Real-Time Dictation (Apple M4 Pro, 24 GB, macOS 15.7 Sequoia)
 
 ## 0. Environment constraints (context)
-- **Apple SpeechAnalyzer / SpeechTranscriber** (the new native on-device streaming ASR) is **macOS 26 / iOS 26 only** — NOT usable on macOS 15.7.3. OBSERVED (Apple announced these at WWDC25 as macOS 26 APIs). All engines below are third-party and run on macOS 15.7. This is why a bundled engine is required.
+- **Apple SpeechAnalyzer / SpeechTranscriber** (the new native on-device streaming ASR) is **macOS 26 / iOS 26 only**  -  NOT usable on macOS 15.7.3. OBSERVED (Apple announced these at WWDC25 as macOS 26 APIs). All engines below are third-party and run on macOS 15.7. This is why a bundled engine is required.
 - All engines target Apple Silicon: choose between **ANE (Neural Engine, via CoreML)**, **GPU (via Metal/MLX)**, and **CPU**. ANE adds ~1.3–1.8× over Metal-GPU on M3/M4 for Whisper-class models. OBSERVED (voicci/JustVoice benchmarks).
 
 ---
@@ -27,7 +27,7 @@
 - OBSERVED corroboration: M2 Pro large-v3-turbo Metal + **flash attention** processes 60 s audio in ~2.8 s (~21× RTF). M4 Pro should exceed this.
 - OBSERVED (mac-whisper-speedtest, **M4 Pro 24 GB**, short "large" clip, single run): whisper.cpp = **1.2293 s** (vs parakeet-mlx 0.4995 s, fluidaudio-coreml 0.1935 s, mlx-whisper 1.0230 s, whisperkit 2.2190 s, faster-whisper 6.9613 s). Note this test's whisper.cpp used large-v3-turbo-q5_0 + CoreML + 4 threads.
 
-**Accuracy (English WER, Open ASR Leaderboard):** OBSERVED — large-v3-turbo LibriSpeech-clean **2.10%**, LibriSpeech-other 4.24%, mean 7.83%; large-v3 clean 2.01%, mean 7.44% (turbo within ~0.4 pt of v3). distil-large-v3: short-form 9.7% (vs 8.4% v3), long-form within 1% of v3, **6.3× faster**, 756M params. OBSERVED (HF distil-whisper).
+**Accuracy (English WER, Open ASR Leaderboard):** OBSERVED  -  large-v3-turbo LibriSpeech-clean **2.10%**, LibriSpeech-other 4.24%, mean 7.83%; large-v3 clean 2.01%, mean 7.44% (turbo within ~0.4 pt of v3). distil-large-v3: short-form 9.7% (vs 8.4% v3), long-form within 1% of v3, **6.3× faster**, 756M params. OBSERVED (HF distil-whisper).
 
 **Proper nouns / vocabulary biasing:** WEAK native support. No hotword/logit-biasing API historically (issue #1979, Mar 2024). Only lever is `initial_prompt` (a.k.a. `--prompt`), **capped at 224 tokens**; only the *last* 224 tokens are used; it soft-biases style/spelling but is unreliable for enforcing a large custom dictionary. Newer whisper.cpp added a `hotwords`/`--grammar` (GBNF) path but grammar is impractical for open dictation. OBSERVED (issue #1979, whisper prompting guide, discussion #348).
 
@@ -46,20 +46,20 @@
 - **v3 (25 European langs incl. EN)**: Open-ASR avg **6.34% WER**, RTFx 3332.74; English Fleurs 4.85% / CoVoST 6.80%. OBSERVED (nvidia HF v3 card).
 - On **Apple Silicon via FluidAudio** (real-device): v2 LibriSpeech-clean **2.1% WER**; v3 English-US **5.4% WER**. OBSERVED (FluidAudio Benchmarks.md).
 
-**Streaming:** Base model is offline/chunked. TDT is causal-friendly; **true streaming exists via wrappers** — FluidAudio ships cache-based streaming variants (see §2b). parakeet-mlx exposes `transcribe_stream()` (chunked with context windows, not frame-native). OBSERVED.
+**Streaming:** Base model is offline/chunked. TDT is causal-friendly; **true streaming exists via wrappers**  -  FluidAudio ships cache-based streaming variants (see §2b). parakeet-mlx exposes `transcribe_stream()` (chunked with context windows, not frame-native). OBSERVED.
 
 **Proper nouns / vocabulary biasing:** WEAK. HF card explicitly warns: *"If a word is not trained in the language model and not present in vocabulary, the word is not likely to be recognized."* No native word-boosting/hotword API in the open checkpoints. This is Parakeet's main weakness for a custom-dictionary feature. OBSERVED.
 
 **License:** Model weights **CC-BY-4.0** (attribution required, commercial OK). OBSERVED. (Attribution obligation matters for a shipped product.)
 
-### 2a. parakeet-mlx (senstella) — GPU/MLX port
+### 2a. parakeet-mlx (senstella)  -  GPU/MLX port
 - Apache-2.0 (code). Supports ParakeetTDT/RNNT/CTC/TDTCTC; default `mlx-community/parakeet-tdt-0.6b-v3`. OBSERVED.
 - `transcribe_stream()` streaming (context default (256,256)); `chunk_duration` 120 s / `overlap_duration` 15 s for long audio; word timestamps; SRT/VTT/JSON output. **No built-in mic streaming, no hotword/vocab biasing.** OBSERVED.
 - Min **2 GB unified memory** (runs on 8 GB Airs). OBSERVED.
 - Speed: **M3 MBP transcribed 1 h 08 m video in 1 m 02 s ≈ 66× RTF**; M4 Pro speedtest short clip **0.4995 s** (2.5× faster than whisper.cpp in same test). OBSERVED.
 - **Integration = Python/MLX only** → would require a Python sidecar process from Swift/Rust (not ideal for a shipped native app).
 
-### 2b. FluidAudio (FluidInference) — Swift/CoreML/ANE port ★ most relevant for native macOS
+### 2b. FluidAudio (FluidInference)  -  Swift/CoreML/ANE port ★ most relevant for native macOS
 - **Native Swift SDK, CoreML on ANE.** macOS 14.0+ / iOS 17.0+ (so **works on macOS 15.7**). SwiftPM + CocoaPods. License Apache-2.0 (SDK). OBSERVED.
 - Ships Parakeet **v2 (EN)**, **v3 (multilingual)**, a **Parakeet "Unified" batch+streaming** model, a **Parakeet EOU (120M) streaming w/ end-of-utterance** model, and **Nemotron streaming 0.6B**. OBSERVED.
 - **Benchmarks (M4 Pro primary rig):** OBSERVED (Benchmarks.md):
@@ -70,7 +70,7 @@
   - Nemotron streaming: 1120 ms chunk tier 2.58% WER / 24.3× RTFx; 2240 ms default 2.64% WER / 87.4× RTFx
   - Batch ASR overall ≈ **110× RTF on M4 Pro (1 min audio ≈ 0.5 s)**
   - CoreML compile (iPhone 16 Pro Max reference): encoder 162 ms warm / 3361 ms cold; decoder 8.11 ms warm.
-- Also bundles **Silero VAD v6.2.1** and speaker diarization in the same SDK — one dependency covers VAD + ASR.
+- Also bundles **Silero VAD v6.2.1** and speaker diarization in the same SDK  -  one dependency covers VAD + ASR.
 - **Weakness inherited:** no native vocabulary biasing (Parakeet limitation).
 
 ---
@@ -105,13 +105,13 @@
 
 **Models:** `stt-1b-en_fr` (~1B, EN/FR, **0.5 s delay**, **built-in semantic VAD**, word timestamps); `stt-2.6b-en` (~2.6B, EN-only, **2.5 s delay**). OBSERVED.
 
-**Streaming:** **True streaming, best-in-class** — Delayed Streams Modeling processes 80 ms frames at 12.5 Hz; native token-by-token output with a fixed model-delay, plus built-in endpointing/VAD (no separate VAD needed). OBSERVED.
+**Streaming:** **True streaming, best-in-class**  -  Delayed Streams Modeling processes 80 ms frames at 12.5 Hz; native token-by-token output with a fixed model-delay, plus built-in endpointing/VAD (no separate VAD needed). OBSERVED.
 
 **Accuracy:** On par with or **beating Whisper-large-v3 on English** despite being streaming (large-v3 = 2.7% WER LibriSpeech reference). No exact Kyutai LibriSpeech number published in sources. OBSERVED (qualitative) / INFERRED (exact WER).
 
 **Throughput:** H100 = 400 realtime streams; L40S = 64 streams @ RTF 3×. OBSERVED.
 
-**Apple Silicon:** **`moshi-mlx` ≥ 0.2.6** runs on Mac (tested M3 MBP); 1B tested on iPhone 16 Pro via `moshi-swift`. **No published M-series RTF number** — a big data gap; the 2.6B model at 2.5 s delay is heavy for 24 GB + snappy dictation. INFERRED: 1B model on M4 Pro should run >1× realtime but Python/MLX or Swift-Moshi integration is less mature than WhisperKit/FluidAudio. 
+**Apple Silicon:** **`moshi-mlx` ≥ 0.2.6** runs on Mac (tested M3 MBP); 1B tested on iPhone 16 Pro via `moshi-swift`. **No published M-series RTF number**  -  a big data gap; the 2.6B model at 2.5 s delay is heavy for 24 GB + snappy dictation. INFERRED: 1B model on M4 Pro should run >1× realtime but Python/MLX or Swift-Moshi integration is less mature than WhisperKit/FluidAudio. 
 
 **License:** weights **CC-BY-4.0**; code MIT (Python) / Apache-2.0 (Rust). OBSERVED.
 
@@ -127,7 +127,7 @@
 
 **Models:** `large-v3` compressed **626 MB**, `large-v3-turbo`, base/small/tiny (multi + `.en`). CoreML/ANE. Auto-download + cache. Custom **prompt** guidance, `logprobs`, temperature, word+segment timestamps, language detect. OBSERVED.
 
-**Streaming:** Pseudo-streaming via `AudioStreamTranscriber` / SSE — emits **"hypothesis" (volatile) then "confirmed" (stable)** text on a rolling window (same UX pattern Wispr Flow uses). Not frame-native but purpose-built for live dictation display. OBSERVED.
+**Streaming:** Pseudo-streaming via `AudioStreamTranscriber` / SSE  -  emits **"hypothesis" (volatile) then "confirmed" (stable)** text on a rolling window (same UX pattern Wispr Flow uses). Not frame-native but purpose-built for live dictation display. OBSERVED.
 
 **Benchmarks (from WhisperKit arxiv 2507.10860, MBP M3 Max):** OBSERVED:
 - Streaming per-word latency: **hypothesis 0.45 s mean**, confirmed ~1.7 s.
@@ -135,7 +135,7 @@
 - WER (d750 large-v3-turbo variant): LibriSpeech-clean **2.25%**, Earnings22 12.85%, CommonVoice17-EN 12.87%.
 - large-v3-turbo compressed **1.6 GB → 0.6 GB** via OD-MBP (Outlier-Decomposed Mixed-Bit Palettization), retains within ~1% WER.
 - **M2 Ultra large-v3-turbo: 72× RTF (GPU+ANE), 42× RTF (ANE-only default).** M4 Pro INFERRED ~30–50× RTF ANE.
-- mac-whisper-speedtest M4 Pro short clip: whisperkit 2.2190 s (slower in that specific harness vs FluidAudio/parakeet-mlx — likely cold-load/config artifact). OBSERVED.
+- mac-whisper-speedtest M4 Pro short clip: whisperkit 2.2190 s (slower in that specific harness vs FluidAudio/parakeet-mlx  -  likely cold-load/config artifact). OBSERVED.
 
 **Vocabulary biasing:** prompt-based only (same 224-token Whisper limitation), but better than Parakeet because Whisper responds reasonably to `initialPrompt` spelling hints. OBSERVED/INFERRED.
 
@@ -143,7 +143,7 @@
 
 ---
 
-## 6. VAD / Endpointing — Silero VAD
+## 6. VAD / Endpointing  -  Silero VAD
 
 - **Version:** latest **v6.2.1 (2026-02-24)**; v5 was the "3× faster, 6000+ languages" rewrite. Use v5+/v6. OBSERVED.
 - **Chunking:** **fixed 512-sample window = 32 ms @ 16 kHz** (256 samples @ 8 kHz). v5+ passes prior-chunk context internally. OBSERVED.
@@ -160,7 +160,7 @@
 **End-of-speech silence thresholds (dictation UX):** OBSERVED (production VAD guidance):
 - Typical endpoint delay **300–800 ms**; it is usually the single largest contributor to perceived latency.
 - **200 ms** = too aggressive (clips mid-sentence pauses); **800 ms+** = feels sluggish; a **100 ms** change is perceptible.
-- **Recommendation for WhimprFlow:** Because the primary mode is **hold-Fn push-to-talk, key-release IS the endpoint** — no silence timer needed for finalization; run VAD only to (a) trim leading/trailing silence and (b) gate live streaming chunks. For an optional **hands-free / tap-to-toggle** mode, use **min_silence_duration ≈ 600 ms** (balance of responsive vs no mid-thought cutoff), threshold 0.5, speech_pad 150 ms lead. INFERRED (synthesis of the numbers above + push-to-talk semantics).
+- **Recommendation for WhimprFlow:** Because the primary mode is **hold-Fn push-to-talk, key-release IS the endpoint**  -  no silence timer needed for finalization; run VAD only to (a) trim leading/trailing silence and (b) gate live streaming chunks. For an optional **hands-free / tap-to-toggle** mode, use **min_silence_duration ≈ 600 ms** (balance of responsive vs no mid-thought cutoff), threshold 0.5, speech_pad 150 ms lead. INFERRED (synthesis of the numbers above + push-to-talk semantics).
 
 ---
 
@@ -183,11 +183,11 @@
 ## 8. RECOMMENDATION
 
 **Primary engine: NVIDIA Parakeet TDT 0.6B v2 (English) via the FluidAudio Swift/CoreML SDK, running on the ANE.**
-Rationale (all OBSERVED): (1) **Fastest** measured on M4 Pro — 2.1% WER LibriSpeech-clean at 145× RTFx batch / ~110× overall, and it won the head-to-head M4 Pro 24 GB speedtest at 0.19 s. (2) **Fully native Swift + CoreML/ANE, macOS 14+** → no Python sidecar, low power, fits a bundled shippable app on 24 GB. (3) FluidAudio bundles **Silero VAD v6.2.1 + a Parakeet-EOU streaming model** in the same SDK, so live in-pill preview during hold and VAD trimming come for free. Use the **streaming/EOU model for the live preview during hold-Fn**, and the **v2 batch model for the high-accuracy finalize on release**.
+Rationale (all OBSERVED): (1) **Fastest** measured on M4 Pro  -  2.1% WER LibriSpeech-clean at 145× RTFx batch / ~110× overall, and it won the head-to-head M4 Pro 24 GB speedtest at 0.19 s. (2) **Fully native Swift + CoreML/ANE, macOS 14+** → no Python sidecar, low power, fits a bundled shippable app on 24 GB. (3) FluidAudio bundles **Silero VAD v6.2.1 + a Parakeet-EOU streaming model** in the same SDK, so live in-pill preview during hold and VAD trimming come for free. Use the **streaming/EOU model for the live preview during hold-Fn**, and the **v2 batch model for the high-accuracy finalize on release**.
 
 **Fallback / secondary: WhisperKit `large-v3-turbo` (argmax-oss-swift, MIT), also native Swift/ANE.** Ship it as a user-selectable engine for (a) users who need **better proper-noun/spelling robustness** (Whisper responds to `initialPrompt` hints; Parakeet does not) and (b) **multilingual** input. Portable third-tier fallback = **whisper.cpp large-v3-turbo via Rust/C FFI** for environments where CoreML model compilation fails.
 
-**Custom-dictionary feature (critical):** Neither Parakeet nor Whisper has real native word-boosting. Do **NOT** rely on the ASR for the dictionary. Instead: (1) feed the user's dictionary/proper-nouns into the **LLM cleanup layer prompt** (this is where Wispr-style vocab learning actually lands — it's a text-correction problem, and it's owned by the cleanup track); (2) optionally pass the top ~30 most-frequent custom terms into WhisperKit/whisper.cpp `initialPrompt` (224-token cap) as a light acoustic nudge; (3) maintain a **phonetic/fuzzy post-correction map** (e.g. Double-Metaphone) applied before/with cleanup. INFERRED (best-practice synthesis).
+**Custom-dictionary feature (critical):** Neither Parakeet nor Whisper has real native word-boosting. Do **NOT** rely on the ASR for the dictionary. Instead: (1) feed the user's dictionary/proper-nouns into the **LLM cleanup layer prompt** (this is where Wispr-style vocab learning actually lands  -  it's a text-correction problem, and it's owned by the cleanup track); (2) optionally pass the top ~30 most-frequent custom terms into WhisperKit/whisper.cpp `initialPrompt` (224-token cap) as a light acoustic nudge; (3) maintain a **phonetic/fuzzy post-correction map** (e.g. Double-Metaphone) applied before/with cleanup. INFERRED (best-practice synthesis).
 
 **Endpointing:** Push-to-talk = key-release is the endpoint (no silence timer needed to finalize). Run Silero VAD only to trim silence and gate streaming frames (512-sample/32 ms, threshold 0.5, speech_pad 150 ms). For an optional hands-free mode, min_silence_duration ≈ 600 ms.
 

@@ -1,13 +1,13 @@
 # Track: v2:1da0c8e3e54119a0d18f5ce52415cc97b5c89c8fa436c528039e796064a328e6
 
-## Wispr Flow — Complete Feature & Settings Inventory (for WhimprFlow clone)
+## Wispr Flow  -  Complete Feature & Settings Inventory (for WhimprFlow clone)
 
-Confidence tags: **[OBS]** = observed in cited primary source; **[INF]** = inferred. Nearly all below is [OBS] from docs.wisprflow.ai help center unless tagged. NOTE for WhimprFlow: real Wispr Flow is **cloud-only** (audio streamed to backend, ensemble of cloud ASR models); our clone re-implements the same UX/behavior locally — the *behavioral facts* below are the spec, not the transport.
+Confidence tags: **[OBS]** = observed in cited primary source; **[INF]** = inferred. Nearly all below is [OBS] from docs.wisprflow.ai help center unless tagged. NOTE for WhimprFlow: real Wispr Flow is **cloud-only** (audio streamed to backend, ensemble of cloud ASR models); our clone re-implements the same UX/behavior locally  -  the *behavioral facts* below are the spec, not the transport.
 
 ---
 
 ### 1. CORE PRODUCT / DICTATION LOOP [OBS: "What is Flow", features page]
-- Tagline: **"dictate anywhere you can type — about 4× faster than typing."** Marketing repeats **"4× faster than typing"** (no WPM/accuracy % published on features page).
+- Tagline: **"dictate anywhere you can type  -  about 4× faster than typing."** Marketing repeats **"4× faster than typing"** (no WPM/accuracy % published on features page).
 - Loop: (1) press+hold hotkey, speak naturally; (2) real-time transcription "with no noticeable delay"; (3) text inserted into active text field of ANY app. Works in any OS text field.
 - AI cleanup layer removes filler words ("um","uh"), formats lists, detects/inserts punctuation, backtracks (self-corrections), spells names right from surrounding context, matches tone. "Vocabulary adaptation: Flow learns your words, names, and technical terms over time."
 - **Requires internet for transcription** (no offline dictation in real product). Desktop platforms: Mac, Windows. Mobile: iOS, Android (Beta).
@@ -35,10 +35,10 @@ Confidence tags: **[OBS]** = observed in cited primary source; **[INF]** = infer
 ### 4. SNIPPETS / TEXT EXPANSION [OBS: snippets + bulk import articles]
 - Voice-triggered static text blocks. Create: Snippets sidebar → "Add new" → **"Snippet" field = trigger** (spoken phrase, ≤60 chars) + **"Expansion" field = inserted text** (≤4,000 chars desktop) → "Add snippet" or Cmd+Enter (Mac)/Ctrl+Enter (Win). iOS: Snippets tab → floating + → Save.
 - **Matching rules**: triggers **case-insensitive**; expansion uses exact saved casing. If entire dictation = trigger only, snippet fires even if STT appends a period (punctuation stripped). Inside a longer sentence, trigger must match "as a whole word with no surrounding punctuation." **Personal snippets take priority over team snippets** with identical triggers.
-- **Dynamic variables NOT supported** — static text only (no date/clipboard/placeholder substitution).
+- **Dynamic variables NOT supported**  -  static text only (no date/clipboard/placeholder substitution).
 - **Sync**: syncs across devices on same account; desktop "Refresh" button for manual sync.
 - **Bulk import (snippets)**: **JSON** array of objects `{"name": trigger(≤60), "text": expansion(≤4000)}`, ≤1,000 items, ≤3MB, Mac/Win only.
-- Platforms: Mac, Windows, iOS (Android has no snippets tab — Android bottom tabs are Home/Dictionary/Style/Snippets per one source but navigation article says no Scratchpad; snippets edit-only on mobile).
+- Platforms: Mac, Windows, iOS (Android has no snippets tab  -  Android bottom tabs are Home/Dictionary/Style/Snippets per one source but navigation article says no Scratchpad; snippets edit-only on mobile).
 
 ### 5. STYLES / TONE MATCHING PER APP [OBS: Flow Styles + personalized-style]
 - **4 app categories**: Personal messages (WhatsApp, Telegram, Signal, Messenger, Discord, iMessage), Work messages (Slack, Teams, Zoom, LinkedIn, Notion, Jira, Google Docs), Email (Gmail, Outlook, ProtonMail, Superhuman + web versions), Other (Docs, Notes, ChatGPT).
@@ -58,16 +58,16 @@ Confidence tags: **[OBS]** = observed in cited primary source; **[INF]** = infer
   - Example: "Let's do coffee at 2 actually 3" → "Let's do coffee at 3".
 - **Auto Cleanup** (May 2026 changelog replaced binary Smart Formatting with **4 levels: None, Light, Medium, High**). Toggle at Settings→Auto Cleanup (Mac/Win). iOS: Settings→Personalization (on/off). Android: always on, no toggle. Stored locally per device. (Dedicated Auto-Cleanup help article currently a placeholder/unavailable.)
 
-### 7. COMMAND MODE [OBS: command-mode article] — Pro-gated
+### 7. COMMAND MODE [OBS: command-mode article]  -  Pro-gated
 - Highlight text + speak a command to edit in place; or no selection → answer/generate inline at cursor. Keeps you in voice for whole writing process.
 - **Activate**: press+hold Command Mode shortcut, speak, release. **ESC** cancels.
   - Mac default: **Fn + Ctrl**; Mac no-Fn: **Cmd+Ctrl+Option**; Windows: **Ctrl+Win+Alt**. Custom up to 4 shortcuts (mouse Middle-Click, Mouse 4–10 supported) at Settings→Shortcuts→Command Mode.
 - With selection → replaces highlighted text. Without → inserts generated content/answer inline.
 - Example commands: "Make this more concise", "Translate to Polish", "Turn this outline into an essay", "Add a rule to never use exclamation marks", "I don't like to use the word utilize".
-- **Limits**: ≤1,000 words per selection; over → error **"Oops, too long to polish — try again with under 1000 words."** Unavailable while previous transcription/Polish still processing. **Desktop (Mac+Win) only**, not mobile.
+- **Limits**: ≤1,000 words per selection; over → error **"Oops, too long to polish  -  try again with under 1000 words."** Unavailable while previous transcription/Polish still processing. **Desktop (Mac+Win) only**, not mobile.
 - **Gating**: requires paid subscription or active free trial; enable at **Settings → Experimental** (visible only to paying users).
 
-### 8. TRANSFORMS (Beta) + POLISH [OBS: transforms + polish articles] — Pro-gated
+### 8. TRANSFORMS (Beta) + POLISH [OBS: transforms + polish articles]  -  Pro-gated
 - **Transforms** = select text + keyboard shortcut → AI rewrites in place. Up to **9 slots**: slot 1 locked as **Prompt Engineer**; slots 2–9 customizable.
   - Create custom: click card → set name (required) → write prompt → assign shortcut → optional up to 5 writing samples (50–500 words each). Auto-saves once BOTH prompt + shortcut set.
 - **Polish** = base transform. **5 default toggle rules**: (1) "Make more concise", (2) "Reword for clarity", (3) "Reorder for readability", (4) "Add structure for readability", (5) "Maintain your tone". Plus up to 5 custom instructions (50 words each) / up to 8 custom transforms.
@@ -77,7 +77,7 @@ Confidence tags: **[OBS]** = observed in cited primary source; **[INF]** = infer
 - Shortcut rules: ≥1 modifier, ≤3 keys total; Mac modifiers Cmd/Ctrl/Opt/Alt/Shift/Fn; Win Ctrl/Alt/Shift/Win; mouse 4–10 + middle-click allowed.
 
 ### 9. WHISPER MODE / DISCREET [OBS: discreet microphone guide]
-- **No separate "whisper mode" setting/toggle.** Flow "understands whispers as accurately as normal speech" — depends on **mic proximity** (closer mic → quieter speech works). Recommends clip-on lavalier, headset boom, condenser, gooseneck mics; earbuds/AirPods mic 6–8" away = worse. Advice: enunciate crisply (people mumble when whispering). Marketing calls it "Whisper mode" as a capability, not a mode.
+- **No separate "whisper mode" setting/toggle.** Flow "understands whispers as accurately as normal speech"  -  depends on **mic proximity** (closer mic → quieter speech works). Recommends clip-on lavalier, headset boom, condenser, gooseneck mics; earbuds/AirPods mic 6–8" away = worse. Advice: enunciate crisply (people mumble when whispering). Marketing calls it "Whisper mode" as a capability, not a mode.
 
 ### 10. LANGUAGES [OBS: multi-language article + research]
 - **100+ languages** with regional variants (British/Canadian/US English, Swiss German, Simplified/Traditional Chinese, Cantonese). 7 languages tuned to English-level; dozens more accurate.
@@ -141,8 +141,8 @@ Confidence tags: **[OBS]** = observed in cited primary source; **[INF]** = infer
 | Open Scratchpad | user-set (Opt+S) | user-set |
 - Rules: needs modifier or valid mouse button; **≤3 keys**; can't mix left/right modifier versions; no duplicate bindings; Caps Lock prohibited. Mouse buttons 4–10 + middle-click supported (Mouse Flow, Mar 2026). Rebindable Enter key; customizable Cancel (for Vim/terminal). "Press Enter Command" (say "press enter" auto-submits) is Experimental/paid.
 
-### 17. SETTINGS PANES — FULL MAP [OBS: navigation article]
-**Desktop (Mac/Win) — Hub left sidebar**: Home, Dictionary, Snippets, Style, Scratchpad, Settings, Help, Refer a Friend, Invite your team (plan-dependent).
+### 17. SETTINGS PANES  -  FULL MAP [OBS: navigation article]
+**Desktop (Mac/Win)  -  Hub left sidebar**: Home, Dictionary, Snippets, Style, Scratchpad, Settings, Help, Refer a Friend, Invite your team (plan-dependent).
 **Settings → sections**:
 - **General**: Shortcuts, Microphone, Languages.
 - **System**: Launch at login; Show Flow Bar; Show in dock (Mac); sound toggles; **Mute music while dictating**; notification categories; Scratchpad opening behavior; **Extras → Auto-add to dictionary**; Reset & restart.
@@ -151,15 +151,15 @@ Confidence tags: **[OBS]** = observed in cited primary source; **[INF]** = infer
 - **Account section**: Account (edit name + profile pic ≤5MB, email read-only, Sign Out, Delete Account), Plans & Billing, **Data & Privacy** (Privacy Mode, Context Awareness, Local storage [store / auto-delete 24h / never store], Default note visibility, Sync Notes / Private Cloud Sync, HIPAA).
 - Localization: settings/notifications in English, German, Spanish, Italian, Portuguese.
 
-**iOS — bottom tabs**: Home, Dictionary, Snippets, Style, Scratchpad. Settings (side menu):
+**iOS  -  bottom tabs**: Home, Dictionary, Snippets, Style, Scratchpad. Settings (side menu):
 - General: Language / Set Language, Disable Flow Session, Auto Open Note, Low Data Mode, Keyboard Feedback, Push Notifications, Allow Live Activities, Action Button setup (supported iPhones).
 - Audio: Interaction Sounds, Use Built-In Mic.
 - Personalization: Smart Formatting toggle (Casual tone while messaging).
 - Data & Privacy: Privacy Mode, Cloud Sync, HIPAA, Auto-Delete Transcripts, Refresh notes from cloud.
 
-**Android — bottom tabs**: Home, Dictionary, Style, Snippets (no Scratchpad). Settings (drawer):
+**Android  -  bottom tabs**: Home, Dictionary, Style, Snippets (no Scratchpad). Settings (drawer):
 - General: Languages, Flow Bubble Size (Shrink when idle / Shrink to a dot / Shrink in search fields), Flow Bubble Opacity.
-- Data & Privacy: Privacy Mode, Private Cloud Sync. Android CANNOT do in-app subscription purchase — manage at wisprflow.ai.
+- Data & Privacy: Privacy Mode, Private Cloud Sync. Android CANNOT do in-app subscription purchase  -  manage at wisprflow.ai.
 
 ### 18. NOTIFICATION CATEGORIES (independently mutable) [OBS: notification-preferences article]
 Settings→System→Notifications (Mac/Win only; mobile = single toggle): **Suggestions** (setup/usage tips), **Announcements** (new features), **Milestones** (word-count achievements, streaks, referral activity, onboarding nudges, dictionary milestones, trial-extension reminders), **Team updates** (enterprise), **Team leaderboard updates** (enterprise). **Critical** (permission alerts, mic hardware errors, helper-app failures, billing/trial-end, incident alerts, text-recovery) is NON-mutable, always shows.
@@ -175,28 +175,28 @@ Settings→System→Notifications (Mac/Win only; mobile = single toggle): **Sugg
 - Edit name (Save), profile pic (saves immediately, ≤5MB), **email read-only**. Sign Out (removes local data incl. transcripts/history; preserves preferences). Delete Account ("deletes all your data, memory, and dictionary, locally and on our servers"). Password reset only for email/password accounts.
 
 ### 21. PLANS / PRICING / GATING [OBS: plans article + pricing]
-- **4 tiers: Basic (Free), Pro, Team, Enterprise.** 14-day Pro trial on all new accounts ("Free for 14 days — no card required"); converts to Basic after.
+- **4 tiers: Basic (Free), Pro, Team, Enterprise.** 14-day Pro trial on all new accounts ("Free for 14 days  -  no card required"); converts to Basic after.
 - **Pro price**: USD $15/mo or $144/yr (~$12/mo); EUR €15/144; GBP £15/144; INR ₹400/3,840; CAD $18/172.80. **Student = 50% off** ($7.50; some sources $6, verified .edu). **Team = 2× Pro per seat**; 2-week team trial.
 - **Free (Basic) word caps**: **2,000 words/week soft cap** (notification "Flow will be slower"), **5,000 hard cap** desktop (10,000 during bonus week); **1,000/week iOS (1,500 hard cap)**. Reset every **Sunday**, no rollover. Hard cap → new dictation blocked + upgrade prompt.
-  - **Bonus words**: one-time **8,000** on first hitting 2,000 limit (message: "You've hit your 2,000 word weekly limit — Here's 8,000 bonus words to keep dictating this week!"), lasts until next Sunday. EXCLUDED: referred users, students, enterprise, iOS, Android.
+  - **Bonus words**: one-time **8,000** on first hitting 2,000 limit (message: "You've hit your 2,000 word weekly limit  -  Here's 8,000 bonus words to keep dictating this week!"), lasts until next Sunday. EXCLUDED: referred users, students, enterprise, iOS, Android.
 - **Basic includes**: core voice-to-text dictation. **Pro adds**: unlimited words all platforms, Command Mode, Transforms/Polish custom, early access, 100+ languages, full platform coverage. **Experimental features** (Command Mode, Press Enter, Bulk Import) paid-only.
 
 ### 22. TEAM / ENTERPRISE [OBS: FAQ + admin articles]
-- **Team**: centralized billing (true-up invoicing mid-cycle), super-admin/admin roles, **Shared Dictionary & Snippets** (team-level accuracy), Team Insights (limited — own word count only), restricted Leaderboard (own stats), auto-join by domain email, shareable instant-join invite links.
+- **Team**: centralized billing (true-up invoicing mid-cycle), super-admin/admin roles, **Shared Dictionary & Snippets** (team-level accuracy), Team Insights (limited  -  own word count only), restricted Leaderboard (own stats), auto-join by domain email, shareable instant-join invite links.
 - **Enterprise**: SSO + **SCIM** provisioning (manage via IdP), **IT Admin seats** (management-only, free, don't count toward billed seats), **Audit Logs** (Members added/removed, Join requests approved/rejected), **Cost Centers** (split billing, inherit negotiated price), **IP Allowlist** (IPv4/IPv6 CIDR), full **Insights Dashboard** (active-user trends, ROI, app usage), full Team Leaderboard, **HIPAA BAA** support, advanced security controls, MDM deployment, Domain Capture verification, Admin Usage v2 (Team Members table + Words Dictated CSV export).
 
 ### 23. PRIVACY / SECURITY / DATA RETENTION [OBS: privacy-mode + security-FAQ articles]
 - **Privacy Mode**: ON = dictation data never used to train/improve models (Wispr or 3rd party); OFF ("Share Data") = may improve features. **Private Cloud Sync**: independent toggle for server-side storage of transcripts/notes (enables cross-device sync). **Privacy Mode ON + Cloud Sync OFF = Zero Data Retention.**
 - Always syncs regardless: dictionary, snippets, subscription/account settings. Blocked when Cloud Sync OFF: Scratchpad sync, meeting sharing/recording, todos sync.
-- **Local storage (desktop)**: Store locally (default) / Auto-delete every 24h / Never store locally — governs device only, independent of Cloud Sync.
+- **Local storage (desktop)**: Store locally (default) / Auto-delete every 24h / Never store locally  -  governs device only, independent of Cloud Sync.
 - Defaults: new users Cloud Sync ON; existing Privacy-Mode-ON users → Cloud Sync OFF; existing Privacy-Mode-OFF → Cloud Sync ON.
 - **Security**: entirely cloud, multi-tenant SaaS, US cloud provider. TLS 1.2+ in transit; AES-256 at rest (HSM/FIPS 140-2 keys). Audio streamed to backend, NOT persisted locally (transcripts not stored locally under Privacy Mode). **SOC 2 Type I** completed Apr 2026 (A-LIGN); **ISO 27001:2022** Stage 1 done, Stage 2 in progress; HIPAA BAA available; subprocessors in DPA Annex 2 (under NDA). HIPAA BAA signers → Privacy Mode permanently locked on. **Banking App Detection** disables dictation in 50+ banking apps (privacy). Email marketing opt-out available.
 
 ### 24. OFFLINE / ERROR MESSAGING [OBS: retry + troubleshooting articles]
-- **No offline dictation** — internet required. Desktop failure: Flow Bar flashes red + notification **"Something's not right" / "Transcript failed to load. You can always recover it from History."** buttons Retry + Open History. Long processing: **"Taking longer than usual… Your audio is saved for retrying."**
+- **No offline dictation**  -  internet required. Desktop failure: Flow Bar flashes red + notification **"Something's not right" / "Transcript failed to load. You can always recover it from History."** buttons Retry + Open History. Long processing: **"Taking longer than usual… Your audio is saved for retrying."**
 - Other error strings: "Flow is having trouble loading/starting", "Audio system failed to load", "No audio received", "Microphone unavailable", "No internet connection", "Is your microphone muted?", "Microphone disconnected", "Unable to access mic" (actions: Select microphone / Troubleshoot / Restart App).
 - iOS: orange-triangle icon → dropdown Retry/Dismiss. Android: Flow Bubble Retry button + "Retrying..." spinner.
-- **Audio preserved for retry**: desktop 14 days; iOS until deleted; Android until low storage. Inline retry from History (desktop: min 5-sec recordings, <14 days old). "No Model Available" error exists as a troubleshooting topic (model failed to load) — resolve via connectivity/restart.
+- **Audio preserved for retry**: desktop 14 days; iOS until deleted; Android until low storage. Inline retry from History (desktop: min 5-sec recordings, <14 days old). "No Model Available" error exists as a troubleshooting topic (model failed to load)  -  resolve via connectivity/restart.
 - Status page: statuspage.incident.io/wispr-flow; in-app service-status alerts, incident banners, slow-dictation notifications.
 
 ### 25. SESSION LIMITS / HANDS-FREE / SNOOZE [OBS]
@@ -215,13 +215,13 @@ Settings→System→Notifications (Mac/Win only; mobile = single toggle): **Sugg
 
 ### 29. MISC FEATURES (from sitemap/changelog) [OBS]
 - **Ranked microphone preferences + automatic mic switching** (v1.5.751); clamshell mode (dock → external mic auto-switch + warning). External audio device setup. Focusrite Scarlett multi-input handling.
-- **Guided product tours** (team features intro). **Refer a Friend** referral link. **Add Wispr Flow to LinkedIn profile** badge. **Route dictation to Slack/Email/Calendar** (article title exists but content is generic shortcut config — likely deep-link routing to open app + insert). **Retry failed transcriptions**, **Reset & restart**, **Re-verify permissions after update**, **macOS Secure Keyboard Entry (Secure Event Input) blocks shortcuts** fix, **Logitech MX Master / Logi Options mouse buttons** fix. Accessibility: keyboard nav + screen reader support article.
+- **Guided product tours** (team features intro). **Refer a Friend** referral link. **Add Wispr Flow to LinkedIn profile** badge. **Route dictation to Slack/Email/Calendar** (article title exists but content is generic shortcut config  -  likely deep-link routing to open app + insert). **Retry failed transcriptions**, **Reset & restart**, **Re-verify permissions after update**, **macOS Secure Keyboard Entry (Secure Event Input) blocks shortcuts** fix, **Logitech MX Master / Logi Options mouse buttons** fix. Accessibility: keyboard nav + screen reader support article.
 
 ---
 ### KEY IMPLEMENTATION NOTES for WhimprFlow (local-first clone)
 - Real Wispr = cloud ASR ensemble (Scribe/Gemini/Whisper) + cloud formatter LLM. **Clone target**: local ASR (e.g. whisper.cpp / parakeet / MLX Whisper on M4 Pro) + local cleanup LLM, with a settings toggle to route the **cleanup/Polish/Command layer to Claude API** instead (matches Wispr's OFF-by-default cloud posture but inverted default).
-- The **"cleanup LLM" maps to Wispr's Polish/Auto-Cleanup/formatter** — the 5 Polish rules + Auto-Cleanup levels (None/Light/Medium/High) + Backtrack + Smart Formatting + Style tone are all prompt-driven post-processing on raw ASR text. This is the natural Claude-API integration point.
-- Push-to-talk default **Fn** (macOS) — note Fn key capture on macOS requires special handling; provide Ctrl+Opt fallback exactly like Wispr.
+- The **"cleanup LLM" maps to Wispr's Polish/Auto-Cleanup/formatter**  -  the 5 Polish rules + Auto-Cleanup levels (None/Light/Medium/High) + Backtrack + Smart Formatting + Style tone are all prompt-driven post-processing on raw ASR text. This is the natural Claude-API integration point.
+- Push-to-talk default **Fn** (macOS)  -  note Fn key capture on macOS requires special handling; provide Ctrl+Opt fallback exactly like Wispr.
 - Accessibility (AXUIElement) + Microphone TCC permissions are the two required macOS grants; onboarding must sequence them as unlockable cards.
 - Text insertion = paste via pasteboard + Cmd+V synthesis (Accessibility), with Shift+Insert/paste-last fallbacks for terminals.
 

@@ -10,6 +10,7 @@ export type Page =
   | "style"
   | "transforms"
   | "scratchpad"
+  | "shortcuts"
   | "settings"
   | "help";
 
@@ -26,6 +27,7 @@ const MAIN: NavDef[] = [
 ];
 
 const BOTTOM: NavDef[] = [
+  { key: "shortcuts", label: "Shortcuts", icon: "shortcuts" },
   { key: "settings", label: "Settings", icon: "settings" },
   { key: "help", label: "Help", icon: "help" },
 ];

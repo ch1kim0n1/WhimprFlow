@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 // Tauri serves the built assets over the `tauri://` custom protocol, which does
 // not emit CORS headers. Vite stamps `crossorigin` on its module <script>/<link>
 // tags, and a crossorigin module fetch against an opaque-origin protocol is
-// blocked — leaving the webview blank. Strip it from the emitted HTML.
+// blocked  -  leaving the webview blank. Strip it from the emitted HTML.
 function stripCrossorigin(): Plugin {
   return {
     name: "strip-crossorigin",

@@ -61,7 +61,7 @@ enum ReadEnd {
 }
 
 /// Like `read_exact`, but a clean EOF *before the first byte* reports `Eof`
-/// instead of erroring — that is the one place EOF is expected (frame boundary).
+/// instead of erroring  -  that is the one place EOF is expected (frame boundary).
 fn read_exact_or_eof<R: Read>(r: &mut R, buf: &mut [u8]) -> Result<ReadEnd, io::Error> {
     let mut filled = 0;
     while filled < buf.len() {

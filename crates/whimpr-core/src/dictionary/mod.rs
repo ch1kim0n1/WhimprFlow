@@ -84,9 +84,9 @@ impl DictionaryStore {
         self.entries.len() != before
     }
 
-    /// Select the entries relevant to `utterance` — those whose spelling or a known
+    /// Select the entries relevant to `utterance`  -  those whose spelling or a known
     /// mishear is edit-close to a spoken token (or adjacent token pair, to catch
-    /// split words like "charge bee" → "ChargeBee") — capped to `max`.
+    /// split words like "charge bee" → "ChargeBee")  -  capped to `max`.
     pub fn prefilter(&self, utterance: &str, max: usize) -> Vec<VocabEntry> {
         let toks: Vec<String> = utterance
             .split_whitespace()
