@@ -49,6 +49,11 @@ pub struct CleanupContext {
     /// for the neutral default. Presentation-only: appended to the system prompt
     /// under "# Personal Style", never a licence to invent content.
     pub style: Option<String>,
+    /// Switch the system prompt to the code-dictation variant. Set by the shell
+    /// when the target app is an IDE/terminal AND the user opted in
+    /// (`code_mode_auto`); see [`prompts::system_for_ctx`].
+    #[serde(default)]
+    pub code_mode: bool,
 }
 
 /// Health of a provider, surfaced to the UI and used for fallback decisions.
@@ -116,7 +121,8 @@ pub fn wrap_transcript(raw: &str) -> String {
 /// local worker, OpenAI, Anthropic  -  sends this identical sequence.
 pub fn build_messages(raw: &str, ctx: &CleanupContext) -> Vec<CleanupMsg> {
     let mut msgs = Vec::with_capacity(prompts::FEW_SHOT.len() * 2 + 2);
-    let mut system = prompts::system_for(ctx.level, ctx.app_bundle_id.as_deref());
+    let mut system =
+        prompts::system_for_ctx(ctx.level, ctx.app_bundle_id.as_deref(), ctx.code_mode);
     if let Some(style) = ctx.style.as_deref() {
         let style = style.trim();
         if !style.is_empty() {
@@ -401,6 +407,26 @@ mod tests {
         assert_eq!(system.role, "system");
         assert!(system.content.contains("# Personal Style"));
         assert!(system.content.contains("British spelling"));
+    }
+
+    #[test]
+    fn code_mode_ctx_switches_the_system_prompt() {
+        let on = CleanupContext {
+            app_bundle_id: Some("com.microsoft.VSCode".into()),
+            code_mode: true,
+            ..Default::default()
+        };
+        assert!(build_messages("hello", &on)[0]
+            .content
+            .contains("Code Dictation"));
+        // Opted out (or a non-code app): the section never appears.
+        let off = CleanupContext {
+            app_bundle_id: Some("com.microsoft.VSCode".into()),
+            ..Default::default()
+        };
+        assert!(!build_messages("hello", &off)[0]
+            .content
+            .contains("Code Dictation"));
     }
 
     #[test]

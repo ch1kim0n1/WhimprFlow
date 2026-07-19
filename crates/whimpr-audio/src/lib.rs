@@ -5,13 +5,15 @@
 //! callback with a small rolling window of RMS levels (0..1) for the pill's live
 //! waveform. [`CaptureHandle::stop`] returns the accumulated mono samples plus the
 //! device sample rate, ready for resampling to 16 kHz and handing to ASR.
+//! [`CaptureHandle::snapshot`] copies the samples so far without stopping, for
+//! live partial transcription.
 //!
 //! cpal's macOS `Stream` is not `Send`, so the stream is created and owned on a
 //! dedicated thread; control flows over channels.
 
 use std::collections::VecDeque;
 use std::sync::mpsc::{channel, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, TryLockError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -41,10 +43,19 @@ impl CaptureResult {
     }
 }
 
+/// Live capture state shared between the audio thread and [`CaptureHandle::snapshot`].
+struct SharedCapture {
+    /// Mono samples accumulated so far (device-native rate).
+    samples: Vec<f32>,
+    /// Set once the stream reports ready; `None` until then.
+    sample_rate: Option<u32>,
+}
+
 /// A running capture. Drop or [`stop`](Self::stop) to end it.
 pub struct CaptureHandle {
     stop_tx: Sender<()>,
     join: Option<JoinHandle<Option<CaptureResult>>>,
+    shared: Arc<Mutex<SharedCapture>>,
 }
 
 impl CaptureHandle {
@@ -52,6 +63,20 @@ impl CaptureHandle {
     pub fn stop(mut self) -> Option<CaptureResult> {
         let _ = self.stop_tx.send(());
         self.join.take().and_then(|h| h.join().ok().flatten())
+    }
+
+    /// Copy the samples captured so far without stopping the stream, for live
+    /// inspection (streaming preview). `None` until the stream reports ready.
+    /// May trail the live input by up to a device buffer or two: the audio
+    /// callback defers its append (into a local carry) rather than block on
+    /// this clone's lock. [`CaptureHandle::stop`] always returns everything.
+    pub fn snapshot(&self) -> Option<CaptureResult> {
+        let shared = self.shared.lock().unwrap_or_else(|e| e.into_inner());
+        let sample_rate = shared.sample_rate?;
+        Some(CaptureResult {
+            samples: shared.samples.clone(),
+            sample_rate,
+        })
     }
 }
 
@@ -77,6 +102,14 @@ where
     let (stop_tx, stop_rx) = channel::<()>();
     let (ready_tx, ready_rx) = channel::<anyhow::Result<()>>();
 
+    // The sample buffer lives outside the capture thread so a running capture can
+    // be snapshot from the handle while the stream keeps writing.
+    let shared = Arc::new(Mutex::new(SharedCapture {
+        samples: Vec::new(),
+        sample_rate: None,
+    }));
+    let shared_thread = shared.clone();
+
     let join = std::thread::spawn(move || -> Option<CaptureResult> {
         let host = cpal::default_host();
         let device = match host.default_input_device() {
@@ -99,8 +132,17 @@ where
         let channels = supported.channels().max(1) as usize;
         let config = supported.config();
 
-        let buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
-        let buf_cb = buffer.clone();
+        let buf_cb = shared_thread.clone();
+
+        // Carry buffer between the real-time callback and the stop path: the
+        // callback downmixes into it, then drains it into `shared.samples`
+        // only when that lock is free. snapshot() can hold the shared lock for
+        // a long clone; the callback must never block on it (blocking the
+        // CoreAudio IO thread drops microphone buffers). The carry's own lock
+        // is uncontended for the whole capture - the stop path only takes it
+        // after the stream (and thus the callback) is gone.
+        let carry: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+        let carry_cb = carry.clone();
 
         let mut ring: VecDeque<f32> = VecDeque::from(vec![0.0f32; WAVE_BARS]);
         let mut last_emit = Instant::now();
@@ -115,16 +157,28 @@ where
                     let frames = data.len() / channels;
                     let mut sumsq = 0.0f32;
                     {
-                        let mut buf = buf_cb.lock().unwrap();
-                        buf.reserve(frames);
+                        let mut pending = carry_cb.lock().unwrap_or_else(|e| e.into_inner());
+                        pending.reserve(frames);
                         for f in 0..frames {
                             let mut acc = 0.0f32;
                             for c in 0..channels {
                                 acc += data[f * channels + c];
                             }
                             let mono = acc / channels as f32;
-                            buf.push(mono);
+                            pending.push(mono);
                             sumsq += mono * mono;
+                        }
+                        // Drain into the shared buffer only if snapshot()
+                        // isn't mid-clone: on contention the samples wait in
+                        // `pending` for the next callback (or the stop path),
+                        // so nothing is lost and the callback never blocks.
+                        let shared = match buf_cb.try_lock() {
+                            Ok(guard) => Some(guard),
+                            Err(TryLockError::Poisoned(e)) => Some(e.into_inner()),
+                            Err(TryLockError::WouldBlock) => None,
+                        };
+                        if let Some(mut shared) = shared {
+                            shared.samples.append(&mut pending);
                         }
                     }
                     if last_emit.elapsed() >= EMIT_INTERVAL {
@@ -161,13 +215,26 @@ where
             let _ = ready_tx.send(Err(anyhow::anyhow!("failed to start stream: {e}")));
             return None;
         }
+        // Publish the rate only now: snapshot() treats it as the ready signal.
+        shared_thread
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .sample_rate = Some(sample_rate);
         let _ = ready_tx.send(Ok(()));
 
         // Keep the stream alive on this thread until asked to stop.
         let _ = stop_rx.recv();
         drop(stream);
 
-        let samples = std::mem::take(&mut *buffer.lock().unwrap());
+        let samples = {
+            let mut shared = shared_thread.lock().unwrap_or_else(|e| e.into_inner());
+            let mut samples = std::mem::take(&mut shared.samples);
+            // The stream is gone, so the callback can't run again: append any
+            // trailing samples a contended final callback left in the carry.
+            let mut pending = carry.lock().unwrap_or_else(|e| e.into_inner());
+            samples.append(&mut pending);
+            samples
+        };
         Some(CaptureResult {
             samples,
             sample_rate,
@@ -178,6 +245,7 @@ where
         Ok(Ok(())) => Ok(CaptureHandle {
             stop_tx,
             join: Some(join),
+            shared,
         }),
         Ok(Err(e)) => Err(e),
         Err(_) => Err(anyhow::anyhow!("capture thread exited before starting")),

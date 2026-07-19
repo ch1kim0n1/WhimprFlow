@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { palette, pillFill, geometry, font } from "../tokens/values";
+import type { PartialTranscriptEvent, ReceiptEvent } from "../hub/api";
 
 // Visual states, mirroring the Rust `BarState`.
 export type BarState =
@@ -13,6 +14,25 @@ export type BarState =
 
 type StateEvent = { state: BarState };
 type WaveformEvent = { bars: number[] };
+
+// How long the insertion receipt stays on screen after a finalize.
+const RECEIPT_MS = 1600;
+
+// One line of receipt copy per action (spec: whimpr://receipt).
+function receiptText(p: ReceiptEvent): string {
+  switch (p.action) {
+    case "pasted":
+      return `Pasted - ${p.words} ${p.words === 1 ? "word" : "words"}`;
+    case "noted":
+      return "Saved to Studio notes";
+    case "clipboard":
+      return "Copied to clipboard";
+    case "pending":
+      return "Awaiting approval";
+    case "error":
+      return p.message ?? "Something's off";
+  }
+}
 
 async function tauriListen<T>(event: string, cb: (payload: T) => void): Promise<() => void> {
   try {
@@ -118,36 +138,66 @@ function StopButton() {
 export function FlowBar() {
   const [state, setState] = useState<BarState>("idle");
   const [bars, setBars] = useState<number[]>([]);
+  const [partial, setPartial] = useState("");
+  const [receipt, setReceipt] = useState<string | null>(null);
+  const receiptTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    let un1: (() => void) | undefined;
-    let un2: (() => void) | undefined;
-    tauriListen<StateEvent>("whimpr://flowbar/state", (p) => setState(p.state)).then((u) => (un1 = u));
-    tauriListen<WaveformEvent>("whimpr://audio/waveform", (p) => setBars(p.bars)).then((u) => (un2 = u));
+    let alive = true;
+    const unlisten: (() => void)[] = [];
+    // tauriListen resolves async, so an unsubscriber can arrive after cleanup
+    // already ran; unsubscribe it on the spot instead of leaking the listener.
+    const push = (p: Promise<() => void>) =>
+      p.then((u) => {
+        if (alive) unlisten.push(u);
+        else u();
+      });
+    push(
+      tauriListen<StateEvent>("whimpr://flowbar/state", (p) => {
+        setState(p.state);
+        // A fresh session starts clean: no stale partial or receipt text.
+        if (p.state === "recording") {
+          setPartial("");
+          setReceipt(null);
+        }
+      }),
+    );
+    push(tauriListen<WaveformEvent>("whimpr://audio/waveform", (p) => setBars(p.bars)));
+    push(tauriListen<PartialTranscriptEvent>("whimpr://transcript/partial", (p) => setPartial(p.text)));
+    push(
+      tauriListen<ReceiptEvent>("whimpr://receipt", (p) => {
+        setReceipt(receiptText(p));
+        window.clearTimeout(receiptTimer.current);
+        receiptTimer.current = window.setTimeout(() => setReceipt(null), RECEIPT_MS);
+      }),
+    );
     return () => {
-      un1?.();
-      un2?.();
+      alive = false;
+      unlisten.forEach((u) => u());
+      window.clearTimeout(receiptTimer.current);
     };
   }, []);
 
   const recording = state === "recording" || state === "locked";
-  const isIdle = state === "idle";
+  // Hold the status form while a receipt is showing: the shell flips the bar
+  // back to idle ~500ms after "done", which would otherwise cut the receipt
+  // flash (including error detail) short of its full RECEIPT_MS.
+  const isIdle = state === "idle" && receipt === null;
   const processing = state === "transcribing";
-  const statusText =
-    state === "transcribing"
-      ? "Cleaning up…"
-      : state === "error"
-        ? "Something's off"
-        : state === "cancelled"
-          ? "Discarded"
-          : "Done";
+  // The receipt (pasted / noted / error detail) supersedes the generic labels
+  // for its ~1.6s flash after a finalize.
+  const statusText = processing
+    ? "Cleaning up…"
+    : (receipt ??
+      (state === "error" ? "Something's off" : state === "cancelled" ? "Discarded" : "Done"));
 
-  // Pill dimensions per state.
+  // Pill dimensions per state; slightly taller while a live partial line shows.
+  const showPartial = recording && partial.length > 0;
   const dims = isIdle
     ? { w: 76, h: 16 }
     : recording
-      ? { w: 250, h: 44 }
-      : { w: 180, h: 36 };
+      ? { w: 250, h: showPartial ? 62 : 44 }
+      : { w: 200, h: 36 };
 
   return (
     <div
@@ -162,11 +212,13 @@ export function FlowBar() {
       }}
     >
       <div
+        role="status"
+        aria-live="polite"
         aria-label={`WhimprFlow ${state}`}
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: recording ? "space-between" : "center",
+          justifyContent: "center",
           gap: 10,
           height: dims.h,
           width: dims.w,
@@ -182,17 +234,42 @@ export function FlowBar() {
         }}
       >
         {isIdle ? null : recording ? (
-          <>
-            <CancelButton />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <DottedWaveform bars={bars} />
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", width: "100%", minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <CancelButton />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <DottedWaveform bars={bars} />
+              </div>
+              <StopButton />
             </div>
-            <StopButton />
-          </>
-        ) : processing ? (
-          <span style={{ color: palette.pillTextMuted }}>{statusText}</span>
+            {showPartial && (
+              <div
+                style={{
+                  fontSize: 11.5,
+                  lineHeight: 1.3,
+                  color: palette.pillTextMuted,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  padding: "0 6px 4px",
+                }}
+              >
+                {partial}
+              </div>
+            )}
+          </div>
         ) : (
-          <span style={{ color: palette.pillTextMuted }}>{statusText}</span>
+          <span
+            style={{
+              color: palette.pillTextMuted,
+              maxWidth: dims.w - 24,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {statusText}
+          </span>
         )}
       </div>
     </div>

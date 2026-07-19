@@ -18,6 +18,27 @@ const TYPING_WPM_BASELINE: f64 = 45.0;
 
 const DAY_SECS: i64 = 86_400;
 
+/// Where a dictation's text came from and where it went: which ASR engine
+/// transcribed it, which cleanup route shaped it, whether any text left the
+/// machine, and what the deterministic gate decided. Shown as the provenance
+/// badge in history and the per-dictation Privacy ledger.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Provenance {
+    /// ASR engine + model, e.g. "whisper.cpp:ggml-base.en.bin".
+    #[serde(default)]
+    pub asr_engine: String,
+    /// Cleanup route: "raw" | "local" | "openai:<model>" | "anthropic:<model>"
+    /// | "snippet" | "workflow:<name>".
+    #[serde(default)]
+    pub cleanup: String,
+    /// True when any part of this dictation was sent to a cloud provider.
+    #[serde(default)]
+    pub sent_to_cloud: bool,
+    /// Gate verdict: "passed" | "rejected" | "skipped".
+    #[serde(default)]
+    pub gate: String,
+}
+
 /// One completed dictation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionRecord {
@@ -36,6 +57,19 @@ pub struct SessionRecord {
     /// Bundle id of the app the text was inserted into, if known.
     #[serde(default)]
     pub app: Option<String>,
+    /// The raw (pre-cleanup) transcript, for the raw-vs-final diff and
+    /// restore-raw. Older records predate this field.
+    #[serde(default)]
+    pub raw: String,
+    /// Where this dictation's text came from and went (Privacy ledger).
+    #[serde(default)]
+    pub provenance: Provenance,
+    /// Mean ASR token probability for this dictation, when the engine reports one.
+    #[serde(default)]
+    pub confidence: Option<f32>,
+    /// Words whose ASR token probability averaged low (likely mishears).
+    #[serde(default)]
+    pub low_words: Vec<String>,
 }
 
 /// A history row for the Hub Home list (newest first). Trimmed view of a record.
@@ -45,6 +79,30 @@ pub struct HistoryItem {
     pub text: String,
     pub app: Option<String>,
     pub words: u32,
+    /// Raw (pre-cleanup) transcript, for the raw-vs-final diff view.
+    #[serde(default)]
+    pub raw: String,
+    #[serde(default)]
+    pub provenance: Provenance,
+    #[serde(default)]
+    pub confidence: Option<f32>,
+    #[serde(default)]
+    pub low_words: Vec<String>,
+}
+
+impl From<&SessionRecord> for HistoryItem {
+    fn from(s: &SessionRecord) -> Self {
+        HistoryItem {
+            ts_unix: s.ts_unix,
+            text: s.text.clone(),
+            app: s.app.clone(),
+            words: s.words,
+            raw: s.raw.clone(),
+            provenance: s.provenance.clone(),
+            confidence: s.confidence,
+            low_words: s.low_words.clone(),
+        }
+    }
 }
 
 /// The persisted stats log.
@@ -109,7 +167,14 @@ impl StatsStore {
         std::fs::write(path, serde_json::to_string_pretty(self).unwrap_or_default())
     }
 
-    /// Append one completed dictation.
+    /// Append one completed dictation with full provenance. This is the primary
+    /// entry point; the older field-by-field [`StatsStore::record`] delegates here.
+    pub fn record_full(&mut self, record: SessionRecord) {
+        self.sessions.push(record);
+    }
+
+    /// Append one completed dictation (legacy signature). Fills the newer
+    /// raw/provenance/confidence fields with their defaults.
     pub fn record(
         &mut self,
         words: u32,
@@ -119,30 +184,82 @@ impl StatsStore {
         text: String,
         app: Option<String>,
     ) {
-        self.sessions.push(SessionRecord {
+        self.record_full(SessionRecord {
             ts_unix,
             words,
             duration_ms,
             chars,
             text,
             app,
+            raw: String::new(),
+            provenance: Provenance::default(),
+            confidence: None,
+            low_words: Vec::new(),
         });
     }
 
-    /// The most recent `limit` dictations, newest first, for the Home history list.
+    /// The most recent `limit` dictations, newest first, for the Home history
+    /// list. Skips records whose text is gone (pruned, cleared, or never
+    /// stored); the Privacy pane's ledger uses [`StatsStore::ledger`] instead.
     pub fn history(&self, limit: usize) -> Vec<HistoryItem> {
         self.sessions
             .iter()
             .rev()
             .filter(|s| !s.text.is_empty())
             .take(limit)
-            .map(|s| HistoryItem {
-                ts_unix: s.ts_unix,
-                text: s.text.clone(),
-                app: s.app.clone(),
-                words: s.words,
-            })
+            .map(HistoryItem::from)
             .collect()
+    }
+
+    /// The most recent `limit` records, newest first, INCLUDING textless ones.
+    /// Same rows as [`StatsStore::history`] minus the text filter: the Privacy
+    /// dictation ledger audits every record (provenance, cloud flag, gate),
+    /// even after its text was pruned or was never stored.
+    pub fn ledger(&self, limit: usize) -> Vec<HistoryItem> {
+        self.sessions
+            .iter()
+            .rev()
+            .take(limit)
+            .map(HistoryItem::from)
+            .collect()
+    }
+
+    /// Retention pruning: strip the stored dictation content (`text`, `raw`,
+    /// and the `low_words` mishear list) from every record older than
+    /// `retention_days` before `now_unix`, keeping the numeric stats (words,
+    /// duration, timestamps) so the dashboard history is unchanged. Returns how
+    /// many records were stripped. `retention_days == 0` strips everything
+    /// before `now_unix`.
+    pub fn prune_texts(&mut self, now_unix: u64, retention_days: u32) -> usize {
+        let cutoff = now_unix.saturating_sub(retention_days as u64 * DAY_SECS as u64);
+        let mut pruned = 0usize;
+        for s in &mut self.sessions {
+            if s.ts_unix < cutoff
+                && (!s.text.is_empty() || !s.raw.is_empty() || !s.low_words.is_empty())
+            {
+                s.text.clear();
+                s.raw.clear();
+                s.low_words.clear();
+                pruned += 1;
+            }
+        }
+        pruned
+    }
+
+    /// Delete-all-text: strip the stored dictation content (`text`, `raw`, and
+    /// the `low_words` mishear list) from every record regardless of age,
+    /// keeping the numeric stats. Returns how many records were stripped.
+    pub fn clear_texts(&mut self) -> usize {
+        let mut cleared = 0usize;
+        for s in &mut self.sessions {
+            if !s.text.is_empty() || !s.raw.is_empty() || !s.low_words.is_empty() {
+                s.text.clear();
+                s.raw.clear();
+                s.low_words.clear();
+                cleared += 1;
+            }
+        }
+        cleared
     }
 
     /// Aggregate everything the dashboard shows. `now_unix` and `tz_offset_minutes`
@@ -280,5 +397,171 @@ mod tests {
         assert_eq!(sum.last7_words[6], 5); // today
         assert_eq!(sum.last7_words[4], 7); // two days ago
         assert_eq!(sum.last7_words[5], 0);
+    }
+
+    /// A record with all the new fields populated, `days_ago` days before NOW.
+    fn full_record(days_ago: u64, text: &str, raw: &str) -> SessionRecord {
+        SessionRecord {
+            ts_unix: NOW - days_ago * DAY,
+            words: 10,
+            duration_ms: 5_000,
+            chars: 50,
+            text: text.to_string(),
+            app: Some("com.example.app".to_string()),
+            raw: raw.to_string(),
+            provenance: Provenance {
+                asr_engine: "whisper.cpp:ggml-base.en.bin".to_string(),
+                cleanup: "local".to_string(),
+                sent_to_cloud: false,
+                gate: "passed".to_string(),
+            },
+            confidence: Some(0.92),
+            low_words: vec!["whimpr".to_string()],
+        }
+    }
+
+    #[test]
+    fn record_full_flows_through_history_with_provenance() {
+        let mut s = StatsStore::default();
+        s.record_full(full_record(0, "Hello there.", "um hello there"));
+        let items = s.history(10);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].raw, "um hello there");
+        assert_eq!(items[0].provenance.cleanup, "local");
+        assert_eq!(items[0].confidence, Some(0.92));
+        assert_eq!(items[0].low_words, vec!["whimpr".to_string()]);
+    }
+
+    #[test]
+    fn prune_texts_strips_old_text_and_raw_but_keeps_numbers() {
+        let mut s = StatsStore::default();
+        s.record_full(full_record(10, "old text", "old raw")); // past cutoff
+        s.record_full(full_record(1, "new text", "new raw")); // inside window
+        let pruned = s.prune_texts(NOW, 7);
+        assert_eq!(pruned, 1);
+        assert_eq!(s.sessions[0].text, "");
+        assert_eq!(s.sessions[0].raw, "");
+        // low_words are dictated words too - retention removes them alongside.
+        assert!(s.sessions[0].low_words.is_empty());
+        // Numeric stats and provenance survive the prune.
+        assert_eq!(s.sessions[0].words, 10);
+        assert_eq!(s.sessions[0].duration_ms, 5_000);
+        assert_eq!(s.sessions[0].provenance.cleanup, "local");
+        // The recent record is untouched.
+        assert_eq!(s.sessions[1].text, "new text");
+        assert_eq!(s.sessions[1].raw, "new raw");
+        assert_eq!(s.sessions[1].low_words, vec!["whimpr".to_string()]);
+        // Second pass finds nothing left to strip.
+        assert_eq!(s.prune_texts(NOW, 7), 0);
+        // Summary totals are unchanged by pruning.
+        assert_eq!(s.summary(0, NOW).total_words, 20);
+    }
+
+    #[test]
+    fn prune_texts_with_zero_days_strips_everything_before_now() {
+        let mut s = StatsStore::default();
+        s.record_full(full_record(0, "today", "today raw"));
+        s.record_full(full_record(1, "yesterday", "yesterday raw"));
+        // retention_days = 0: never store text -> everything before now goes.
+        let pruned = s.prune_texts(NOW + 1, 0);
+        assert_eq!(pruned, 2);
+        assert!(s
+            .sessions
+            .iter()
+            .all(|r| r.text.is_empty() && r.raw.is_empty() && r.low_words.is_empty()));
+    }
+
+    #[test]
+    fn prune_texts_strips_low_words_even_when_text_already_gone() {
+        let mut s = StatsStore::default();
+        // A record whose text/raw were already stripped but whose low_words
+        // (actual dictated words) linger - e.g. written before low_words was
+        // covered by pruning.
+        let mut r = full_record(10, "", "");
+        r.low_words = vec!["Manvi".to_string(), "acetaminophen.".to_string()];
+        s.record_full(r);
+        assert_eq!(s.prune_texts(NOW, 7), 1);
+        assert!(s.sessions[0].low_words.is_empty());
+        assert_eq!(s.prune_texts(NOW, 7), 0);
+    }
+
+    #[test]
+    fn clear_texts_strips_all_records_and_reports_count() {
+        let mut s = StatsStore::default();
+        s.record_full(full_record(0, "a", ""));
+        s.record_full(full_record(3, "", "b raw"));
+        let mut low_only = full_record(5, "", "");
+        low_only.low_words = vec!["mishear".to_string()]; // dictated words linger
+        s.record_full(low_only);
+        s.record(10, 5_000, 50, NOW, String::new(), None); // already textless
+        assert_eq!(s.clear_texts(), 3);
+        assert!(s
+            .sessions
+            .iter()
+            .all(|r| r.text.is_empty() && r.raw.is_empty() && r.low_words.is_empty()));
+        assert_eq!(s.clear_texts(), 0);
+        assert_eq!(s.summary(0, NOW).total_sessions, 4);
+    }
+
+    #[test]
+    fn ledger_includes_textless_records_history_skips_them() {
+        let mut s = StatsStore::default();
+        s.record_full(full_record(2, "kept text", "kept raw"));
+        s.record(10, 5_000, 50, NOW - DAY, String::new(), None); // textless
+        s.record_full(full_record(0, "newest", "newest raw"));
+
+        // History (Home list) hides the textless record.
+        let history = s.history(10);
+        assert_eq!(history.len(), 2);
+        assert!(history.iter().all(|i| !i.text.is_empty()));
+
+        // The Privacy ledger audits every record, newest first.
+        let ledger = s.ledger(10);
+        assert_eq!(ledger.len(), 3);
+        assert_eq!(ledger[0].text, "newest");
+        assert_eq!(ledger[1].text, "");
+        assert_eq!(ledger[1].words, 10);
+        assert_eq!(ledger[2].text, "kept text");
+        assert_eq!(ledger[2].provenance.cleanup, "local");
+
+        // Limits: ledger counts textless rows toward the limit; history only
+        // counts rows it shows.
+        assert_eq!(s.ledger(2).len(), 2);
+        assert_eq!(s.history(2).len(), 2);
+        assert_eq!(s.history(2)[1].text, "kept text");
+    }
+
+    #[test]
+    fn old_stats_json_without_new_fields_still_loads() {
+        // Back-compat: a stats.json written before raw/provenance/confidence/
+        // low_words existed must still parse, with the new fields defaulting.
+        let json = r#"{
+            "sessions": [
+                {
+                    "ts_unix": 1610107200,
+                    "words": 12,
+                    "duration_ms": 6000,
+                    "chars": 60,
+                    "text": "hello world",
+                    "app": "com.apple.Notes"
+                },
+                {
+                    "ts_unix": 1610020800,
+                    "words": 4,
+                    "duration_ms": 2000,
+                    "chars": 20
+                }
+            ]
+        }"#;
+        let s: StatsStore = serde_json::from_str(json).unwrap();
+        assert_eq!(s.sessions.len(), 2);
+        assert_eq!(s.sessions[0].text, "hello world");
+        assert_eq!(s.sessions[0].raw, "");
+        assert_eq!(s.sessions[0].provenance, Provenance::default());
+        assert_eq!(s.sessions[0].confidence, None);
+        assert!(s.sessions[0].low_words.is_empty());
+        // Records that predate even `text`/`app` keep loading too.
+        assert_eq!(s.sessions[1].text, "");
+        assert_eq!(s.sessions[1].app, None);
     }
 }

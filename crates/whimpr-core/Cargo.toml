@@ -17,3 +17,6 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 strsim = "0.11"
 rphonetic = "3"
+# Voice Memory encryption-at-rest (AES-256-GCM) + OS randomness for nonces.
+aes-gcm = "0.10"
+getrandom = "0.2"
