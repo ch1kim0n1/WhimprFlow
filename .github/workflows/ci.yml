@@ -94,11 +94,14 @@ jobs:
       - name: cargo build --workspace
         run: cargo build --workspace
 
-      - name: cargo test --workspace
-        run: cargo test --workspace
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
 
-      - name: cargo clippy --workspace
-        run: cargo clippy --workspace -- -D warnings
+      - name: cargo test --workspace --all-targets
+        run: cargo test --workspace --all-targets
+
+      - name: cargo clippy --workspace --all-targets
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   ui:
     name: UI (frontend)

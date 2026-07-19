@@ -32,7 +32,8 @@ mod imp {
             encoding: u32,
         ) -> CFStringRef;
         fn CFStringGetLength(s: CFStringRef) -> isize;
-        fn CFStringGetCString(s: CFStringRef, buf: *mut c_char, size: isize, encoding: u32) -> bool;
+        fn CFStringGetCString(s: CFStringRef, buf: *mut c_char, size: isize, encoding: u32)
+            -> bool;
         fn CFStringGetMaximumSizeForEncoding(len: isize, encoding: u32) -> isize;
         fn CFGetTypeID(cf: CFTypeRef) -> usize;
         fn CFStringGetTypeID() -> usize;
@@ -157,10 +158,7 @@ pub fn watch_correction(_inserted: &str) {}
 /// Split into alphanumeric word tokens (punctuation stripped), original case kept.
 pub fn word_tokens(s: &str) -> Vec<String> {
     s.split_whitespace()
-        .map(|w| {
-            w.trim_matches(|c: char| !c.is_alphanumeric())
-                .to_string()
-        })
+        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
         .filter(|w| !w.is_empty())
         .collect()
 }
@@ -172,9 +170,9 @@ const COMMON: &[&str] = &[
     "have", "from", "they", "theyre", "their", "there", "would", "could", "should", "about",
     "then", "than", "them", "these", "those", "here", "were", "well", "will", "what", "when",
     "where", "which", "while", "your", "into", "just", "like", "make", "made", "want", "some",
-    "time", "know", "take", "come", "back", "good", "much", "also", "been", "over", "only",
-    "more", "most", "very", "even", "such", "many", "does", "done", "same", "sure", "okay",
-    "yeah", "hey", "hello", "please", "thanks", "thank", "message", "email", "text", "call",
+    "time", "know", "take", "come", "back", "good", "much", "also", "been", "over", "only", "more",
+    "most", "very", "even", "such", "many", "does", "done", "same", "sure", "okay", "yeah", "hey",
+    "hello", "please", "thanks", "thank", "message", "email", "text", "call",
 ];
 
 /// Detect a single clean one-word correction: exactly one word removed from the
@@ -190,8 +188,14 @@ pub fn detect_correction(inserted: &str, after: &str) -> Option<(String, String)
     let ins_lc: HashSet<String> = ins.iter().map(|w| w.to_lowercase()).collect();
     let aft_lc: HashSet<String> = aft.iter().map(|w| w.to_lowercase()).collect();
 
-    let removed: Vec<&String> = ins.iter().filter(|w| !aft_lc.contains(&w.to_lowercase())).collect();
-    let added: Vec<&String> = aft.iter().filter(|w| !ins_lc.contains(&w.to_lowercase())).collect();
+    let removed: Vec<&String> = ins
+        .iter()
+        .filter(|w| !aft_lc.contains(&w.to_lowercase()))
+        .collect();
+    let added: Vec<&String> = aft
+        .iter()
+        .filter(|w| !ins_lc.contains(&w.to_lowercase()))
+        .collect();
     if removed.len() != 1 || added.len() != 1 {
         return None; // only learn on a clean 1-for-1 swap
     }
@@ -246,30 +250,45 @@ mod tests {
     #[test]
     fn learns_a_name_correction() {
         // We inserted "monvi"; the user fixed it to "Manvi".
-        let got = detect_correction("send the deck to monvi please", "send the deck to Manvi please");
+        let got = detect_correction(
+            "send the deck to monvi please",
+            "send the deck to Manvi please",
+        );
         assert_eq!(got, Some(("monvi".to_string(), "Manvi".to_string())));
     }
 
     #[test]
     fn ignores_common_word_edits() {
         // "there" -> "their" is a common-word edit, never learned.
-        assert_eq!(detect_correction("i left there bag", "i left their bag"), None);
+        assert_eq!(
+            detect_correction("i left there bag", "i left their bag"),
+            None
+        );
     }
 
     #[test]
     fn ignores_multi_word_changes() {
         // More than one word changed → too ambiguous, skip.
-        assert_eq!(detect_correction("meet at noon monvi", "see you later Manvi"), None);
+        assert_eq!(
+            detect_correction("meet at noon monvi", "see you later Manvi"),
+            None
+        );
     }
 
     #[test]
     fn ignores_unrelated_replacement() {
         // Not phonetically close → not a mishear.
-        assert_eq!(detect_correction("ping the server foo", "ping the server Xylophone"), None);
+        assert_eq!(
+            detect_correction("ping the server foo", "ping the server Xylophone"),
+            None
+        );
     }
 
     #[test]
     fn no_change_learns_nothing() {
-        assert_eq!(detect_correction("hello there world", "hello there world"), None);
+        assert_eq!(
+            detect_correction("hello there world", "hello there world"),
+            None
+        );
     }
 }

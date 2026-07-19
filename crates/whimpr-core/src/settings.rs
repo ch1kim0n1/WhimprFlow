@@ -119,7 +119,13 @@ pub struct Chord {
 
 impl Chord {
     pub fn new(meta: bool, ctrl: bool, alt: bool, shift: bool, key: Key) -> Self {
-        Self { meta, ctrl, alt, shift, key }
+        Self {
+            meta,
+            ctrl,
+            alt,
+            shift,
+            key,
+        }
     }
 
     /// No modifiers held at all  -  used for Cancel's bare-Escape default and to
@@ -210,6 +216,9 @@ pub struct Settings {
     pub anthropic_model: String,
     /// Play the record-start ping.
     pub sound_on_start: bool,
+    /// Redact curses and inappropriate words from inserted text.
+    #[serde(default)]
+    pub safe_mode: bool,
     /// ASR language, as a whisper.cpp language code (e.g. `"en"`, `"es"`).
     /// `None` (the default) means auto-detect. `#[serde(default)]` keeps older
     /// settings.json files (written before this field existed) loading cleanly.
@@ -234,6 +243,7 @@ impl Default for Settings {
             openai_base_url: String::new(),
             anthropic_model: "claude-haiku-4-5".to_string(),
             sound_on_start: true,
+            safe_mode: false,
             language: None,
             keybindings: KeyBindings::default(),
             style: StyleProfile::default(),
@@ -267,6 +277,7 @@ mod tests {
         assert_eq!(s.cleanup_mode, CleanupMode::Local);
         assert_eq!(s.cleanup_level, CleanupLevel::Light);
         assert_eq!(s.language, None);
+        assert!(!s.safe_mode);
     }
 
     #[test]
@@ -282,6 +293,34 @@ mod tests {
         }"#;
         let s: Settings = serde_json::from_str(json).unwrap();
         assert_eq!(s.language, None);
+        assert!(!s.safe_mode);
+    }
+
+    #[test]
+    fn safe_mode_round_trips_and_old_settings_remain_compatible() {
+        let old_json = r#"{
+            "cleanup_mode": "local",
+            "cleanup_level": "light",
+            "openai_model": "gpt-4o-mini",
+            "anthropic_model": "claude-haiku-4-5",
+            "sound_on_start": true
+        }"#;
+        let old: Settings = serde_json::from_str(old_json).unwrap();
+        assert!(
+            !old.safe_mode,
+            "safe mode must stay opt-in for existing users"
+        );
+
+        let enabled_json = r#"{
+            "cleanup_mode": "local",
+            "cleanup_level": "light",
+            "openai_model": "gpt-4o-mini",
+            "anthropic_model": "claude-haiku-4-5",
+            "sound_on_start": true,
+            "safe_mode": true
+        }"#;
+        let enabled: Settings = serde_json::from_str(enabled_json).unwrap();
+        assert!(enabled.safe_mode);
     }
 
     #[test]
@@ -293,6 +332,7 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(back.cleanup_mode, CleanupMode::Local);
+        assert!(!back.safe_mode);
     }
 
     #[test]
@@ -314,14 +354,22 @@ mod tests {
     fn default_bindings_have_no_conflicts_with_each_other() {
         let kb = KeyBindings::default();
         for (name, chord) in kb.entries() {
-            assert_eq!(kb.conflict_with(chord, name), None, "{name} should not conflict with itself");
+            assert_eq!(
+                kb.conflict_with(chord, name),
+                None,
+                "{name} should not conflict with itself"
+            );
         }
         // Cross-check: no two DIFFERENT default bindings share a chord.
         let entries = kb.entries();
         for i in 0..entries.len() {
             for j in 0..entries.len() {
                 if i != j {
-                    assert_ne!(entries[i].1, entries[j].1, "{} and {} collide", entries[i].0, entries[j].0);
+                    assert_ne!(
+                        entries[i].1, entries[j].1,
+                        "{} and {} collide",
+                        entries[i].0, entries[j].0
+                    );
                 }
             }
         }
@@ -365,7 +413,10 @@ mod tests {
 
     #[test]
     fn casual_alone_renders_without_a_note() {
-        let s = StyleProfile { formality: Formality::Casual, custom_instructions: String::new() };
+        let s = StyleProfile {
+            formality: Formality::Casual,
+            custom_instructions: String::new(),
+        };
         let out = s.to_instructions().expect("some instructions");
         assert!(out.contains("casual"));
         assert!(!out.contains("Additional user preference"));
@@ -379,7 +430,10 @@ mod tests {
         };
         let out = s.to_instructions().expect("some instructions");
         // "Additional user preference: " prefix + exactly MAX chars of note.
-        let note_len = out.trim_start_matches("Additional user preference: ").chars().count();
+        let note_len = out
+            .trim_start_matches("Additional user preference: ")
+            .chars()
+            .count();
         assert_eq!(note_len, MAX_STYLE_INSTRUCTIONS_LEN);
     }
 

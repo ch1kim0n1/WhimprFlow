@@ -10,11 +10,12 @@ use std::io::{BufRead, Write};
 use std::num::NonZeroU32;
 
 use anyhow::Context as _;
+use encoding_rs::UTF_8;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
-use llama_cpp_2::model::{AddBos, LlamaModel, Special};
+use llama_cpp_2::model::{AddBos, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
 use serde::{Deserialize, Serialize};
 
@@ -100,7 +101,10 @@ fn generate(backend: &LlamaBackend, model: &LlamaModel, req: &Request) -> anyhow
         ));
     } else {
         for m in &req.messages {
-            prompt.push_str(&format!("<|im_start|>{}\n{}<|im_end|>\n", m.role, m.content));
+            prompt.push_str(&format!(
+                "<|im_start|>{}\n{}<|im_end|>\n",
+                m.role, m.content
+            ));
         }
     }
     prompt.push_str("<|im_start|>assistant\n");
@@ -119,6 +123,7 @@ fn generate(backend: &LlamaBackend, model: &LlamaModel, req: &Request) -> anyhow
     ctx.decode(&mut batch)?;
 
     let mut sampler = LlamaSampler::greedy();
+    let mut decoder = UTF_8.new_decoder();
     let mut n_cur = batch.n_tokens();
     let mut out = String::new();
     let limit = n_prompt + req.max_tokens;
@@ -129,7 +134,7 @@ fn generate(backend: &LlamaBackend, model: &LlamaModel, req: &Request) -> anyhow
         if model.is_eog_token(token) {
             break;
         }
-        out.push_str(&model.token_to_str(token, Special::Tokenize)?);
+        out.push_str(&model.token_to_piece(token, &mut decoder, true, None)?);
         batch.clear();
         batch.add(token, n_cur, &[0], true)?;
         n_cur += 1;

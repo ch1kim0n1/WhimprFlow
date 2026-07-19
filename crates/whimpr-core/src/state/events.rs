@@ -35,5 +35,7 @@ pub enum Input {
     Trigger(TriggerToken),
     Pipeline(PipelineEvent),
     /// A periodic clock tick used for double-tap timeout, cooldown, and session cap.
-    Tick { now_ms: u64 },
+    Tick {
+        now_ms: u64,
+    },
 }

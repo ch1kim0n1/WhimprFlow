@@ -3,8 +3,8 @@
 
 use std::path::Path;
 
-use whimpr_core::AsrEngine;
 use whimpr_asr::WhisperEngine;
+use whimpr_core::AsrEngine;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();

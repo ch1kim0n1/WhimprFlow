@@ -26,7 +26,10 @@ export type IconName =
   | "archive"
   | "check"
   | "lock"
-  | "shortcuts";
+  | "shortcuts"
+  | "user"
+  | "panelLeft"
+  | "panelRight";
 
 const PATHS: Record<IconName, string[]> = {
   home: ["M4 11l8-7 8 7", "M6 10v10h12V10"],
@@ -66,6 +69,9 @@ const PATHS: Record<IconName, string[]> = {
   check: ["M5 12l4 4 10-10"],
   lock: ["M7 11V8a5 5 0 0 1 10 0v3", "M6 11h12v9H6z", "M12 15v2"],
   shortcuts: ["M4 6h16v12H4z", "M7 10h.01", "M11 10h.01", "M15 10h.01", "M7 14h10"],
+  user: ["M20 21a8 8 0 0 0-16 0", "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"],
+  panelLeft: ["M4 4h16v16H4z", "M9 4v16", "M6.5 10l-2 2 2 2"],
+  panelRight: ["M4 4h16v16H4z", "M15 4v16", "M17.5 10l2 2-2 2"],
 };
 
 export function Icon({

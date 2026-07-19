@@ -10,7 +10,9 @@
 //! never covered by any automated test)  -  it proves the *logic* pipeline that
 //! CAN run headless, which is the gap that was actually fixable here.
 
-use whimpr_core::cleanup::{build_messages, evaluate_gates, CleanupProvider, HealthStatus, ProviderId};
+use whimpr_core::cleanup::{
+    build_messages, evaluate_gates, CleanupProvider, HealthStatus, ProviderId,
+};
 use whimpr_core::{CleanupContext, CleanupLevel, DictSource, DictionaryStore, SnippetStore};
 
 /// A `CleanupProvider` that returns a fixed string regardless of input, so the
@@ -41,7 +43,10 @@ fn snippet_match_short_circuits_before_cleanup() {
 
     let raw = "my email";
     let matched = snippets.find_match(raw);
-    assert_eq!(matched.map(|e| e.expansion.as_str()), Some("user@example.com"));
+    assert_eq!(
+        matched.map(|e| e.expansion.as_str()),
+        Some("user@example.com")
+    );
     // Real platform code stops here on a match and never calls a provider.
 }
 
@@ -56,7 +61,10 @@ fn dictionary_vocab_flows_into_cleanup_messages_and_passes_light_gate() {
 
     let raw = "send the deck to monvi please um";
     let vocab = dict.prefilter(raw, 15);
-    assert!(vocab.iter().any(|v| v.correct == "Manvi"), "prefilter should surface Manvi for 'monvi'");
+    assert!(
+        vocab.iter().any(|v| v.correct == "Manvi"),
+        "prefilter should surface Manvi for 'monvi'"
+    );
 
     let ctx = CleanupContext {
         level: CleanupLevel::Light,
@@ -74,7 +82,10 @@ fn dictionary_vocab_flows_into_cleanup_messages_and_passes_light_gate() {
     // drop the filler word, fix the mis-hearing, nothing else.
     let cleaned = "Send the deck to Manvi please.";
     let verdict = evaluate_gates(raw, cleaned, CleanupLevel::Light);
-    assert!(verdict.passed(), "conservative filler removal must pass the Light gate: {verdict:?}");
+    assert!(
+        verdict.passed(),
+        "conservative filler removal must pass the Light gate: {verdict:?}"
+    );
 }
 
 /// A provider that hallucinates a full rewrite must be caught by the Light
@@ -84,11 +95,17 @@ fn dictionary_vocab_flows_into_cleanup_messages_and_passes_light_gate() {
 fn hallucinated_rewrite_is_rejected_by_the_light_gate() {
     let raw = "send the deck to monvi please um";
     let provider = FakeProvider("I'd be happy to help you send that deck right away!".to_string());
-    let ctx = CleanupContext { level: CleanupLevel::Light, ..Default::default() };
+    let ctx = CleanupContext {
+        level: CleanupLevel::Light,
+        ..Default::default()
+    };
 
     let cleaned = provider.cleanup(raw, &ctx).unwrap();
     let verdict = evaluate_gates(raw, &cleaned, CleanupLevel::Light);
-    assert!(!verdict.passed(), "an assistant-style rewrite must not pass Light: {verdict:?}");
+    assert!(
+        !verdict.passed(),
+        "an assistant-style rewrite must not pass Light: {verdict:?}"
+    );
     // The real pipeline's response to `!verdict.passed()` is to paste the raw
     // transcript instead  -  that fallback itself is exercised by
     // `crates/whimpr-core/src/cleanup/mod.rs`'s own gate tests, not repeated here.

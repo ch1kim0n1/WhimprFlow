@@ -21,9 +21,9 @@ pub struct DictEntryDto {
 
 #[cfg(target_os = "macos")]
 mod imp {
+    use super::DictEntryDto;
     use std::os::raw::c_void;
     use std::path::PathBuf;
-    use super::DictEntryDto;
     use std::ptr::{null, null_mut};
     use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
     use std::sync::{Arc, Mutex, OnceLock};
@@ -33,8 +33,8 @@ mod imp {
     use tauri::{AppHandle, Emitter};
     use whimpr_core::state::{Action, BarState};
     use whimpr_core::{
-        AsrEngine, CleanupContext, CleanupMode, CleanupProvider, Input, PipelineEvent, StateMachine,
-        TriggerToken,
+        AsrEngine, CleanupContext, CleanupMode, CleanupProvider, Input, PipelineEvent,
+        StateMachine, TriggerToken,
     };
     use whimpr_ipc::BindingId;
 
@@ -88,8 +88,7 @@ mod imp {
     // last cleanup edit", and plain Escape "cancel dictation" keys below; the Fn
     // push-to-talk key alone only ever needs FlagsChanged since it has no keycode.
     const K_CG_EVENT_KEY_DOWN: u32 = 10;
-    const EVENTS_OF_INTEREST: u64 =
-        (1 << K_CG_EVENT_FLAGS_CHANGED) | (1 << K_CG_EVENT_KEY_DOWN);
+    const EVENTS_OF_INTEREST: u64 = (1 << K_CG_EVENT_FLAGS_CHANGED) | (1 << K_CG_EVENT_KEY_DOWN);
     const FLAG_SECONDARY_FN: u64 = 0x0080_0000;
     // CGEventFlags modifier bits (CGEventTypes.h). COMMAND is also used by
     // `paste::post_cmd_v`; the other three are new here for the hotkey combos.
@@ -219,7 +218,9 @@ mod imp {
         if words == 0 {
             return;
         }
-        let app = TARGET_APP.get().and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone());
+        let app = TARGET_APP
+            .get()
+            .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone());
         if let Some(m) = STATS.get() {
             let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
             let duration_ms = (duration_secs.max(0.0) * 1000.0) as u32;
@@ -240,9 +241,14 @@ mod imp {
     /// The most recent dictation's text, for the "paste/copy last transcript"
     /// hotkeys. `None` if nothing has been dictated yet this run.
     fn latest_transcript() -> Option<String> {
-        STATS
-            .get()
-            .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).history(1).into_iter().next().map(|r| r.text))
+        STATS.get().and_then(|m| {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .history(1)
+                .into_iter()
+                .next()
+                .map(|r| r.text)
+        })
     }
 
     /// Re-paste the most recently dictated transcript into the frontmost app
@@ -379,7 +385,11 @@ mod imp {
     pub fn stats_summary(tz_offset_minutes: i32) -> whimpr_core::StatsSummary {
         STATS
             .get()
-            .map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).summary(tz_offset_minutes, unix_now()))
+            .map(|m| {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .summary(tz_offset_minutes, unix_now())
+            })
             .unwrap_or_else(|| {
                 whimpr_core::StatsStore::default().summary(tz_offset_minutes, unix_now())
             })
@@ -466,7 +476,12 @@ mod imp {
         let settings = current_settings();
         let level = settings.cleanup_level;
         if matches!(settings.cleanup_mode, CleanupMode::Raw) || level.bypasses_llm() {
-            return (raw.to_string(), raw.to_string());
+            let text = if settings.safe_mode {
+                whimpr_core::redact_inappropriate_words(raw)
+            } else {
+                raw.to_string()
+            };
+            return (text.clone(), text);
         }
         // Turn explicit spoken layout cues ("new line", "new paragraph") into break
         // markers up front  -  the model passes an opaque marker through reliably but
@@ -478,9 +493,15 @@ mod imp {
         let raw_out = whimpr_core::cleanup::post_process(&raw_norm);
         let vocab = DICTIONARY
             .get()
-            .map(|d| d.lock().unwrap_or_else(|e| e.into_inner()).prefilter(raw, 15))
+            .map(|d| {
+                d.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .prefilter(raw, 15)
+            })
             .unwrap_or_default();
-        let app_bundle_id = TARGET_APP.get().and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone());
+        let app_bundle_id = TARGET_APP
+            .get()
+            .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone());
         if let Some(app) = app_bundle_id.as_deref() {
             eprintln!("[whimpr] cleanup target app: {app}");
         }
@@ -494,13 +515,16 @@ mod imp {
         // Run the on-device model with the same prompt + per-app formatting.
         let run_local = || -> Option<anyhow::Result<String>> {
             LOCAL.get().and_then(|m| {
-                m.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(|w| {
-                    // System prompt + few-shot demonstration turns + the transcript,
-                    // so the on-device model actually produces newlines/lists and
-                    // resolves self-corrections instead of just being told to.
-                    let messages = whimpr_core::cleanup::build_messages(raw, &ctx);
-                    w.cleanup(&messages)
-                })
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_mut()
+                    .map(|w| {
+                        // System prompt + few-shot demonstration turns + the transcript,
+                        // so the on-device model actually produces newlines/lists and
+                        // resolves self-corrections instead of just being told to.
+                        let messages = whimpr_core::cleanup::build_messages(raw, &ctx);
+                        w.cleanup(&messages)
+                    })
             })
         };
         // Selected provider, falling back to local when a cloud key can't be read
@@ -508,11 +532,21 @@ mod imp {
         let result: Option<anyhow::Result<String>> = match settings.cleanup_mode {
             CleanupMode::OpenAi => OPENAI
                 .get()
-                .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|p| p.cleanup(raw, &ctx)))
+                .and_then(|m| {
+                    m.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .as_ref()
+                        .map(|p| p.cleanup(raw, &ctx))
+                })
                 .or_else(run_local),
             CleanupMode::Anthropic => ANTHROPIC
                 .get()
-                .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|p| p.cleanup(raw, &ctx)))
+                .and_then(|m| {
+                    m.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .as_ref()
+                        .map(|p| p.cleanup(raw, &ctx))
+                })
                 .or_else(run_local),
             CleanupMode::Local => run_local(),
             CleanupMode::Raw => None,
@@ -543,11 +577,24 @@ mod imp {
                 raw_out.clone()
             }
         };
+        let raw_out = if settings.safe_mode {
+            whimpr_core::redact_inappropriate_words(&raw_out)
+        } else {
+            raw_out
+        };
+        let final_text = if settings.safe_mode {
+            whimpr_core::redact_inappropriate_words(&final_text)
+        } else {
+            final_text
+        };
         (raw_out, final_text)
     }
 
     fn now_ms() -> u64 {
-        CLOCK.get().map(|c| c.elapsed().as_millis() as u64).unwrap_or(0)
+        CLOCK
+            .get()
+            .map(|c| c.elapsed().as_millis() as u64)
+            .unwrap_or(0)
     }
 
     fn bar_name(b: BarState) -> &'static str {
@@ -564,7 +611,11 @@ mod imp {
 
     fn emit_bar(app: &AppHandle, state: &'static str) {
         eprintln!("[whimpr] pill -> {state}");
-        let _ = app.emit_to(OVERLAY_LABEL, "whimpr://flowbar/state", BarPayload { state });
+        let _ = app.emit_to(
+            OVERLAY_LABEL,
+            "whimpr://flowbar/state",
+            BarPayload { state },
+        );
     }
 
     /// Feed one input into the shared state machine and enact its actions.
@@ -623,11 +674,16 @@ mod imp {
                         let _ = app_cb.emit_to(
                             OVERLAY_LABEL,
                             "whimpr://audio/waveform",
-                            WavePayload { bars: bars.to_vec() },
+                            WavePayload {
+                                bars: bars.to_vec(),
+                            },
                         );
                     }) {
                         Ok(handle) => {
-                            *CAPTURE.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
+                            *CAPTURE
+                                .get_or_init(|| Mutex::new(None))
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner()) = Some(handle);
                         }
                         Err(e) => eprintln!("[whimpr] mic capture failed to start: {e}"),
                     }
@@ -636,7 +692,9 @@ mod imp {
             // Stop the mic, transcribe the buffered audio, and advance the machine.
             Action::StopCaptureAndFinalize { session } => {
                 let app2 = app.clone();
-                let handle = CAPTURE.get().and_then(|slot| slot.lock().unwrap_or_else(|e| e.into_inner()).take());
+                let handle = CAPTURE
+                    .get()
+                    .and_then(|slot| slot.lock().unwrap_or_else(|e| e.into_inner()).take());
                 std::thread::spawn(move || {
                     // Whatever happens, return the pill to idle (done -> idle).
                     let finish =
@@ -682,7 +740,14 @@ mod imp {
                             });
                             let (raw_out, text) = match snippet_expansion {
                                 Some(expansion) => {
-                                    eprintln!("[whimpr] SNIPPET matched  -  pasting expansion directly");
+                                    eprintln!(
+                                        "[whimpr] SNIPPET matched  -  pasting expansion directly"
+                                    );
+                                    let expansion = if current_settings().safe_mode {
+                                        whimpr_core::redact_inappropriate_words(&expansion)
+                                    } else {
+                                        expansion
+                                    };
                                     (expansion.clone(), expansion)
                                 }
                                 None => {
@@ -703,7 +768,8 @@ mod imp {
                                 *LAST_TEXTS
                                     .get_or_init(|| Mutex::new(None))
                                     .lock()
-                                    .unwrap_or_else(|e| e.into_inner()) = Some((raw_out, text.clone()));
+                                    .unwrap_or_else(|e| e.into_inner()) =
+                                    Some((raw_out, text.clone()));
                                 // Log words + speaking time for the Hub stats (WPM, streak…).
                                 record_dictation(&text, res.duration_secs());
                                 // Watch the field for a post-paste correction to learn (✨).
@@ -741,12 +807,42 @@ mod imp {
         match key {
             Key::Escape => 53,
             Key::Char(c) => match c.to_ascii_uppercase() {
-                'A' => 0, 'B' => 11, 'C' => 8, 'D' => 2, 'E' => 14, 'F' => 3, 'G' => 5,
-                'H' => 4, 'I' => 34, 'J' => 38, 'K' => 40, 'L' => 37, 'M' => 46, 'N' => 45,
-                'O' => 31, 'P' => 35, 'Q' => 12, 'R' => 15, 'S' => 1, 'T' => 17, 'U' => 32,
-                'V' => 9, 'W' => 13, 'X' => 7, 'Y' => 16, 'Z' => 6,
-                '0' => 29, '1' => 18, '2' => 19, '3' => 20, '4' => 21, '5' => 23, '6' => 22,
-                '7' => 26, '8' => 28, '9' => 25,
+                'A' => 0,
+                'B' => 11,
+                'C' => 8,
+                'D' => 2,
+                'E' => 14,
+                'F' => 3,
+                'G' => 5,
+                'H' => 4,
+                'I' => 34,
+                'J' => 38,
+                'K' => 40,
+                'L' => 37,
+                'M' => 46,
+                'N' => 45,
+                'O' => 31,
+                'P' => 35,
+                'Q' => 12,
+                'R' => 15,
+                'S' => 1,
+                'T' => 17,
+                'U' => 32,
+                'V' => 9,
+                'W' => 13,
+                'X' => 7,
+                'Y' => 16,
+                'Z' => 6,
+                '0' => 29,
+                '1' => 18,
+                '2' => 19,
+                '3' => 20,
+                '4' => 21,
+                '5' => 23,
+                '6' => 22,
+                '7' => 26,
+                '8' => 28,
+                '9' => 25,
                 _ => -1,
             },
         }
@@ -787,7 +883,10 @@ mod imp {
                     eprintln!("[whimpr] Fn DOWN");
                     // Snapshot the paste target now, while the user's app is focused.
                     let target = crate::appctx::frontmost_bundle_id();
-                    *TARGET_APP.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner()) = target;
+                    *TARGET_APP
+                        .get_or_init(|| Mutex::new(None))
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner()) = target;
                     handle_input(Input::Trigger(TriggerToken::Down {
                         binding: BindingId::PushToTalk,
                         at_ms,
@@ -803,9 +902,8 @@ mod imp {
         } else if etype == K_CG_EVENT_KEY_DOWN {
             // Ignore OS-synthesized auto-repeat keydowns  -  fire once per physical
             // press, not once per repeat tick while the chord is held.
-            let autorepeat = unsafe {
-                CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_AUTOREPEAT)
-            };
+            let autorepeat =
+                unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_AUTOREPEAT) };
             if autorepeat != 0 {
                 return event;
             }
@@ -914,7 +1012,9 @@ mod imp {
         let language_for_model = settings.language.clone();
         let _ = SETTINGS.set(Mutex::new(settings));
         let _ = DICTIONARY.set(Mutex::new(dict));
-        let _ = SNIPPETS.set(Mutex::new(whimpr_core::SnippetStore::load(&snippets_path())));
+        let _ = SNIPPETS.set(Mutex::new(
+            whimpr_core::SnippetStore::load(&snippets_path()),
+        ));
         let _ = STATS.set(Mutex::new(whimpr_core::StatsStore::load(&stats_path())));
         rebuild_providers();
 
@@ -1010,7 +1110,8 @@ mod imp {
 pub use imp::{
     backup_data, cancel_dictation, confirm_dictation, current_settings, dictionary_add,
     dictionary_entries, dictionary_learn, dictionary_remove, history, install, rebuild_providers,
-    snippet_add, snippet_entries, snippet_remove, stats_summary, test_command_edit, update_settings,
+    snippet_add, snippet_entries, snippet_remove, stats_summary, test_command_edit,
+    update_settings,
 };
 
 // Windows uses the real (but unverified) platform layer in `crate::win`.

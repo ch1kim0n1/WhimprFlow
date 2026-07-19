@@ -9,12 +9,12 @@
 mod appctx;
 mod autolearn;
 mod hotkey;
+#[cfg(target_os = "linux")]
+mod linux;
 mod local_llm;
 mod paste;
 #[cfg(target_os = "windows")]
 mod win;
-#[cfg(target_os = "linux")]
-mod linux;
 
 use serde::Serialize;
 use tauri::{
@@ -34,7 +34,11 @@ fn position_overlay(w: &WebviewWindow) {
         .ok()
         .flatten()
         .or_else(|| w.current_monitor().ok().flatten())
-        .or_else(|| w.available_monitors().ok().and_then(|m| m.into_iter().next()));
+        .or_else(|| {
+            w.available_monitors()
+                .ok()
+                .and_then(|m| m.into_iter().next())
+        });
     let Some(monitor) = monitor else {
         eprintln!("[whimpr] no monitor found  -  overlay stays at default position");
         return;
@@ -54,24 +58,21 @@ fn position_overlay(w: &WebviewWindow) {
 }
 
 fn build_overlay(app: &tauri::App) -> tauri::Result<WebviewWindow> {
-    let overlay = WebviewWindowBuilder::new(
-        app,
-        OVERLAY_LABEL,
-        WebviewUrl::App("overlay.html".into()),
-    )
-    .title("WhimprBar")
-    // Tight window so it only catches clicks right around the pill, not a big
-    // invisible box over the app behind it.
-    .inner_size(300.0, 72.0)
-    .decorations(false)
-    .transparent(true)
-    .shadow(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .focused(false)
-    .resizable(false)
-    .visible(true)
-    .build()?;
+    let overlay =
+        WebviewWindowBuilder::new(app, OVERLAY_LABEL, WebviewUrl::App("overlay.html".into()))
+            .title("WhimprBar")
+            // Tight window so it only catches clicks right around the pill, not a big
+            // invisible box over the app behind it.
+            .inner_size(300.0, 72.0)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .resizable(false)
+            .visible(true)
+            .build()?;
     position_overlay(&overlay);
     let _ = overlay.show();
     Ok(overlay)
@@ -308,8 +309,7 @@ fn set_api_key(provider: String, key: String) -> Result<(), String> {
         "anthropic" => "anthropic_api_key",
         _ => return Err(format!("unknown provider {provider}")),
     };
-    let entry =
-        keyring::Entry::new("com.whimpr.whimprflow", account).map_err(|e| e.to_string())?;
+    let entry = keyring::Entry::new("com.whimpr.whimprflow", account).map_err(|e| e.to_string())?;
     let key = key.trim();
     // Delete any existing item first so the new one is created by (and readable to)
     // this app  -  a key added via the `security` CLI isn't readable by the app.
@@ -362,15 +362,53 @@ pub fn run() {
             // Tray menu doubles as an at-a-glance popup of the active shortcuts,
             // built from the user's current keybindings.
             let kb = hotkey::current_settings().keybindings;
-            let header = MenuItem::with_id(app, "hdr", "WhimprFlow Shortcuts", false, None::<&str>)?;
+            let header =
+                MenuItem::with_id(app, "hdr", "WhimprFlow Shortcuts", false, None::<&str>)?;
             let sep0 = PredefinedMenuItem::separator(app)?;
-            let sc_ptt = MenuItem::with_id(app, "sc_ptt", "Push-to-talk:  Hold Fn", true, None::<&str>)?;
-            let sc_hf = MenuItem::with_id(app, "sc_hf", "Hands-free lock:  Double-tap Fn", true, None::<&str>)?;
-            let sc_cmd = MenuItem::with_id(app, "sc_cmd", "Command Mode:  Hold Fn+Ctrl", true, None::<&str>)?;
-            let sc_cancel = MenuItem::with_id(app, "sc_cancel", &format!("Cancel:  {}", fmt_chord(&kb.cancel)), true, None::<&str>)?;
-            let sc_paste = MenuItem::with_id(app, "sc_paste", &format!("Paste last:  {}", fmt_chord(&kb.paste_last)), true, None::<&str>)?;
-            let sc_copy = MenuItem::with_id(app, "sc_copy", &format!("Copy last:  {}", fmt_chord(&kb.copy_last)), true, None::<&str>)?;
-            let sc_undo = MenuItem::with_id(app, "sc_undo", &format!("Undo cleanup:  {}", fmt_chord(&kb.undo_last)), true, None::<&str>)?;
+            let sc_ptt =
+                MenuItem::with_id(app, "sc_ptt", "Push-to-talk:  Hold Fn", true, None::<&str>)?;
+            let sc_hf = MenuItem::with_id(
+                app,
+                "sc_hf",
+                "Hands-free lock:  Double-tap Fn",
+                true,
+                None::<&str>,
+            )?;
+            let sc_cmd = MenuItem::with_id(
+                app,
+                "sc_cmd",
+                "Command Mode:  Hold Fn+Ctrl",
+                true,
+                None::<&str>,
+            )?;
+            let sc_cancel = MenuItem::with_id(
+                app,
+                "sc_cancel",
+                format!("Cancel:  {}", fmt_chord(&kb.cancel)),
+                true,
+                None::<&str>,
+            )?;
+            let sc_paste = MenuItem::with_id(
+                app,
+                "sc_paste",
+                format!("Paste last:  {}", fmt_chord(&kb.paste_last)),
+                true,
+                None::<&str>,
+            )?;
+            let sc_copy = MenuItem::with_id(
+                app,
+                "sc_copy",
+                format!("Copy last:  {}", fmt_chord(&kb.copy_last)),
+                true,
+                None::<&str>,
+            )?;
+            let sc_undo = MenuItem::with_id(
+                app,
+                "sc_undo",
+                format!("Undo cleanup:  {}", fmt_chord(&kb.undo_last)),
+                true,
+                None::<&str>,
+            )?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let open = MenuItem::with_id(app, "open", "Open WhimprFlow", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit WhimprFlow", true, None::<&str>)?;
@@ -397,7 +435,9 @@ pub fn run() {
                 });
             match tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png")) {
                 Ok(img) => {
-                    tray = tray.icon(img);
+                    // Template image: macOS renders it monochrome and adapts it to
+                    // the menu bar (white on dark), matching native status items.
+                    tray = tray.icon(img).icon_as_template(true);
                 }
                 Err(_) => {
                     if let Some(icon) = app.default_window_icon().cloned() {

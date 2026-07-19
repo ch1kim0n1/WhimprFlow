@@ -119,7 +119,14 @@ impl StatsStore {
         text: String,
         app: Option<String>,
     ) {
-        self.sessions.push(SessionRecord { ts_unix, words, duration_ms, chars, text, app });
+        self.sessions.push(SessionRecord {
+            ts_unix,
+            words,
+            duration_ms,
+            chars,
+            text,
+            app,
+        });
     }
 
     /// The most recent `limit` dictations, newest first, for the Home history list.
@@ -144,8 +151,11 @@ impl StatsStore {
     pub fn summary(&self, tz_offset_minutes: i32, now_unix: u64) -> StatsSummary {
         let total_words: u64 = self.sessions.iter().map(|s| s.words as u64).sum();
         let total_sessions = self.sessions.len() as u64;
-        let total_speaking_secs: f64 =
-            self.sessions.iter().map(|s| s.duration_ms as f64 / 1000.0).sum();
+        let total_speaking_secs: f64 = self
+            .sessions
+            .iter()
+            .map(|s| s.duration_ms as f64 / 1000.0)
+            .sum();
 
         let avg_wpm = wpm(total_words, total_speaking_secs);
 
@@ -186,7 +196,11 @@ impl StatsStore {
             .map(|s| local_day(s.ts_unix, tz_offset_minutes))
             .collect();
         let mut day_streak = 0u32;
-        let mut d = if active.contains(&today) { today } else { today - 1 };
+        let mut d = if active.contains(&today) {
+            today
+        } else {
+            today - 1
+        };
         while active.contains(&d) {
             day_streak += 1;
             d -= 1;

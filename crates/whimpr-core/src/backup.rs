@@ -42,7 +42,10 @@ mod tests {
         let missing = tmp.join("snippets.json"); // deliberately never created
 
         let dest = backup_files(
-            &[("settings.json", settings.clone()), ("snippets.json", missing)],
+            &[
+                ("settings.json", settings.clone()),
+                ("snippets.json", missing),
+            ],
             &tmp.join("backups"),
         )
         .unwrap();

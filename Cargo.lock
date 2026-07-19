@@ -4980,6 +4980,7 @@ name = "whimpr-llm-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "encoding_rs",
  "llama-cpp-2",
  "serde",
  "serde_json",

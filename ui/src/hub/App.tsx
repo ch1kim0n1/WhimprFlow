@@ -13,6 +13,8 @@ import { ScratchpadPane } from "./ScratchpadPane";
 import { ShortcutsPane } from "./ShortcutsPane";
 import { SettingsPane } from "./SettingsPane";
 import { Help } from "./Help";
+import { ComingSoon } from "./ComingSoon";
+import { Walkthrough, shouldShowWalkthrough } from "./Walkthrough";
 import { gsap, prefersReduced, EASE } from "./anim";
 import {
   getSettings,
@@ -49,6 +51,14 @@ function RoutedPage({ page, children }: { page: Page; children: React.ReactNode 
 
 export function App() {
   const [page, setPage] = useState<Page>("home");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("whimpr:sidebar-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [showWalkthrough, setShowWalkthrough] = useState(shouldShowWalkthrough);
   const [settings, setLocalSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [entered, setEntered] = useState(false);
   const [status, setStatus] = useState<Status>({
@@ -71,6 +81,15 @@ export function App() {
     void setSettings(s);
   };
 
+  const setCollapsed = (collapsed: boolean) => {
+    setSidebarCollapsed(collapsed);
+    try {
+      localStorage.setItem("whimpr:sidebar-collapsed", String(collapsed));
+    } catch {
+      // The state remains usable when browser storage is unavailable.
+    }
+  };
+
   // Gate the app behind the setup wizard until the required permissions are granted.
   if (!(status.accessibility && status.microphone) && !entered) {
     return <Onboarding status={status} refresh={refresh} onEnter={() => setEntered(true)} />;
@@ -86,7 +105,7 @@ export function App() {
         background: theme.pageBg,
       }}
     >
-      <Sidebar page={page} setPage={setPage} />
+      <Sidebar page={page} setPage={setPage} collapsed={sidebarCollapsed} onCollapsedChange={setCollapsed} />
       <main style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
         <div style={{ padding: "36px 44px", margin: "0 auto", maxWidth: 1120 }}>
           <RoutedPage key={page} page={page}>
@@ -102,9 +121,11 @@ export function App() {
               <SettingsPane settings={settings} onChange={update} status={status} refresh={refresh} />
             )}
             {page === "help" && <Help />}
+            {page === "account" && <ComingSoon icon="user" title="Account" desc="Account profiles and sync controls are on the way." />}
           </RoutedPage>
         </div>
       </main>
+      {showWalkthrough && <Walkthrough setPage={setPage} onComplete={() => setShowWalkthrough(false)} />}
     </div>
   );
 }

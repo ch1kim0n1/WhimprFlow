@@ -22,7 +22,10 @@ pub enum BarState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     /// Begin microphone capture for a session.
-    StartCapture { session: SessionId, mode: RecordMode },
+    StartCapture {
+        session: SessionId,
+        mode: RecordMode,
+    },
     /// Stop capture and hand the buffered audio to the pipeline.
     StopCaptureAndFinalize { session: SessionId },
     /// Throw away the current capture (too short, or cancelled) without pasting.

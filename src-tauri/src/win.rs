@@ -34,9 +34,7 @@ use tauri::{AppHandle, Emitter};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::ProcessStatus::GetModuleBaseNameW;
-use windows::Win32::System::Threading::{
-    OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
-};
+use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
     VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RCONTROL, VK_RWIN, VK_SHIFT, VK_SPACE, VK_V,
@@ -197,7 +195,10 @@ fn unix_now() -> u64 {
 }
 
 fn now_ms() -> u64 {
-    CLOCK.get().map(|c| c.elapsed().as_millis() as u64).unwrap_or(0)
+    CLOCK
+        .get()
+        .map(|c| c.elapsed().as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn emit_bar(state: &'static str) {
@@ -223,8 +224,7 @@ fn foreground_app() -> Option<String> {
         if pid == 0 {
             return None;
         }
-        let handle =
-            OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid).ok()?;
+        let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid).ok()?;
         let mut buf = [0u16; 260];
         let len = GetModuleBaseNameW(handle, None, &mut buf);
         if len == 0 {
@@ -289,13 +289,22 @@ fn clean_transcript(raw: &str) -> (String, String) {
     let settings = current_settings_inner();
     let level = settings.cleanup_level;
     if matches!(settings.cleanup_mode, CleanupMode::Raw) || level.bypasses_llm() {
-        return (raw.to_string(), raw.to_string());
+        let text = if settings.safe_mode {
+            whimpr_core::redact_inappropriate_words(raw)
+        } else {
+            raw.to_string()
+        };
+        return (text.clone(), text);
     }
     let raw_norm = whimpr_core::cleanup::pre_normalize_layout(raw);
     let raw_out = whimpr_core::cleanup::post_process(&raw_norm);
     let vocab = DICTIONARY
         .get()
-        .map(|d| d.lock().unwrap_or_else(|e| e.into_inner()).prefilter(&raw_norm, 15))
+        .map(|d| {
+            d.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .prefilter(&raw_norm, 15)
+        })
         .unwrap_or_default();
     let ctx = CleanupContext {
         level,
@@ -306,16 +315,24 @@ fn clean_transcript(raw: &str) -> (String, String) {
     };
     let run_local = || -> Option<anyhow::Result<String>> {
         LOCAL.get().and_then(|m| {
-            m.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(|w| {
-                let messages = whimpr_core::cleanup::build_messages(&raw_norm, &ctx);
-                w.cleanup(&messages)
-            })
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_mut()
+                .map(|w| {
+                    let messages = whimpr_core::cleanup::build_messages(&raw_norm, &ctx);
+                    w.cleanup(&messages)
+                })
         })
     };
     let result = match settings.cleanup_mode {
         CleanupMode::OpenAi => OPENAI
             .get()
-            .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|p| p.cleanup(&raw_norm, &ctx)))
+            .and_then(|m| {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .map(|p| p.cleanup(&raw_norm, &ctx))
+            })
             .or_else(run_local),
         CleanupMode::Local => run_local(),
         _ => run_local(),
@@ -330,6 +347,16 @@ fn clean_transcript(raw: &str) -> (String, String) {
             }
         }
         _ => raw_out.clone(),
+    };
+    let raw_out = if settings.safe_mode {
+        whimpr_core::redact_inappropriate_words(&raw_out)
+    } else {
+        raw_out
+    };
+    let final_text = if settings.safe_mode {
+        whimpr_core::redact_inappropriate_words(&final_text)
+    } else {
+        final_text
     };
     (raw_out, final_text)
 }
@@ -377,7 +404,10 @@ fn on_ptt_down() {
     }
     std::thread::spawn(|| match whimpr_audio::start(|_: &[f32]| {}) {
         Ok(handle) => {
-            *CAPTURE.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
+            *CAPTURE
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(handle);
         }
         Err(e) => eprintln!("[whimpr:win] mic capture failed: {e}"),
     });
@@ -412,7 +442,9 @@ fn finalize_locked_session() {
 /// normal push-to-talk release path (`on_ptt_up`) and the locked-session
 /// finalize path (`finalize_locked_session`).
 fn finish_capture_and_paste(app: Option<String>) {
-    let handle = CAPTURE.get().and_then(|slot| slot.lock().unwrap_or_else(|e| e.into_inner()).take());
+    let handle = CAPTURE
+        .get()
+        .and_then(|slot| slot.lock().unwrap_or_else(|e| e.into_inner()).take());
     std::thread::spawn(move || {
         let Some(res) = handle.and_then(|h| h.stop()) else {
             return;
@@ -434,7 +466,14 @@ fn finish_capture_and_paste(app: Option<String>) {
                     .map(|entry| entry.expansion.clone())
             });
             let (raw_out, text) = match snippet_expansion {
-                Some(expansion) => (expansion.clone(), expansion),
+                Some(expansion) => {
+                    let expansion = if current_settings_inner().safe_mode {
+                        whimpr_core::redact_inappropriate_words(&expansion)
+                    } else {
+                        expansion
+                    };
+                    (expansion.clone(), expansion)
+                }
                 None => clean_transcript(&raw),
             };
             if !text.is_empty() {
@@ -492,9 +531,12 @@ pub fn cancel_dictation() {
 
 /// The most recent dictation's text, if any.
 fn latest_transcript() -> Option<String> {
-    STATS
-        .get()
-        .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).latest().map(|r| r.text.clone()))
+    STATS.get().and_then(|m| {
+        m.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .latest()
+            .map(|r| r.text.clone())
+    })
 }
 
 /// True when both Ctrl and Alt are currently held  -  Command Mode's chord isn't
@@ -543,7 +585,9 @@ fn copy_last_transcript() {
 /// cursor position  -  it does not attempt to find-and-replace the previously
 /// pasted cleaned text in place (see perfect-todo.md item 3).
 fn undo_last_cleanup() {
-    let pair = LAST_TEXTS.get().and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone());
+    let pair = LAST_TEXTS
+        .get()
+        .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone());
     match pair {
         Some((raw, final_pasted)) if raw != final_pasted => {
             eprintln!("[whimpr:win] hotkey: undo last cleanup edit");
@@ -607,10 +651,30 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
             // Cancel has no OS-level hook on Windows until now  -  this is a new
             // capability, not just a port of the existing three.
             let candidates: [(&AtomicBool, u16, whimpr_core::Chord, fn()); 4] = [
-                (&CANCEL_KEY_DOWN, vk_for_key(bindings.cancel.key), bindings.cancel, cancel_dictation),
-                (&PASTE_LAST_KEY_DOWN, vk_for_key(bindings.paste_last.key), bindings.paste_last, paste_last_transcript),
-                (&COPY_LAST_KEY_DOWN, vk_for_key(bindings.copy_last.key), bindings.copy_last, copy_last_transcript),
-                (&UNDO_LAST_KEY_DOWN, vk_for_key(bindings.undo_last.key), bindings.undo_last, undo_last_cleanup),
+                (
+                    &CANCEL_KEY_DOWN,
+                    vk_for_key(bindings.cancel.key),
+                    bindings.cancel,
+                    cancel_dictation,
+                ),
+                (
+                    &PASTE_LAST_KEY_DOWN,
+                    vk_for_key(bindings.paste_last.key),
+                    bindings.paste_last,
+                    paste_last_transcript,
+                ),
+                (
+                    &COPY_LAST_KEY_DOWN,
+                    vk_for_key(bindings.copy_last.key),
+                    bindings.copy_last,
+                    copy_last_transcript,
+                ),
+                (
+                    &UNDO_LAST_KEY_DOWN,
+                    vk_for_key(bindings.undo_last.key),
+                    bindings.undo_last,
+                    undo_last_cleanup,
+                ),
             ];
             for (latch, bound_vk, chord, action) in candidates {
                 if vk != bound_vk {
@@ -671,7 +735,9 @@ pub fn install(app: AppHandle) {
     let language_for_model = settings.language.clone();
     let _ = SETTINGS.set(Mutex::new(settings));
     let _ = DICTIONARY.set(Mutex::new(whimpr_core::DictionaryStore::load(&dict_path())));
-    let _ = SNIPPETS.set(Mutex::new(whimpr_core::SnippetStore::load(&snippets_path())));
+    let _ = SNIPPETS.set(Mutex::new(
+        whimpr_core::SnippetStore::load(&snippets_path()),
+    ));
     let _ = STATS.set(Mutex::new(whimpr_core::StatsStore::load(&stats_path())));
     let _ = OPENAI.set(Mutex::new(None));
     let _ = LOCAL.set(Mutex::new(None));
@@ -725,21 +791,29 @@ pub fn rebuild_providers() {
         .and_then(|e| e.get_password().ok())
         .filter(|k| !k.trim().is_empty());
     if let Some(slot) = OPENAI.get() {
-        *slot.lock().unwrap_or_else(|e| e.into_inner()) = key.map(|k| {
-            whimpr_cleanup::OpenAiProvider::with_base_url(k, model, Some(base_url))
-        });
+        *slot.lock().unwrap_or_else(|e| e.into_inner()) =
+            key.map(|k| whimpr_cleanup::OpenAiProvider::with_base_url(k, model, Some(base_url)));
     }
 }
 
 pub fn stats_summary(tz_offset_minutes: i32) -> StatsSummary {
     STATS
         .get()
-        .map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).summary(tz_offset_minutes, unix_now()))
-        .unwrap_or_else(|| whimpr_core::StatsStore::default().summary(tz_offset_minutes, unix_now()))
+        .map(|m| {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .summary(tz_offset_minutes, unix_now())
+        })
+        .unwrap_or_else(|| {
+            whimpr_core::StatsStore::default().summary(tz_offset_minutes, unix_now())
+        })
 }
 
 pub fn history(limit: usize) -> Vec<whimpr_core::HistoryItem> {
-    STATS.get().map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).history(limit)).unwrap_or_default()
+    STATS
+        .get()
+        .map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).history(limit))
+        .unwrap_or_default()
 }
 
 pub fn dictionary_entries() -> Vec<crate::hotkey::DictEntryDto> {

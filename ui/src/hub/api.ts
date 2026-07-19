@@ -49,6 +49,7 @@ export interface Settings {
   openai_base_url: string;
   anthropic_model: string;
   sound_on_start: boolean;
+  safe_mode: boolean;
   // ASR language, as a whisper.cpp language code (e.g. "en", "es"). null means
   // auto-detect.
   language: string | null;
@@ -111,6 +112,7 @@ export const DEFAULT_SETTINGS: Settings = {
   openai_base_url: "",
   anthropic_model: "claude-haiku-4-5",
   sound_on_start: true,
+  safe_mode: false,
   language: null,
   keybindings: DEFAULT_KEYBINDINGS,
   style: DEFAULT_STYLE,

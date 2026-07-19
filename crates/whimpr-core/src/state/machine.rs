@@ -102,7 +102,10 @@ impl StateMachine {
                     started_ms,
                     ..
                 },
-                TriggerToken::Up { binding: BindingId::PushToTalk, at_ms },
+                TriggerToken::Up {
+                    binding: BindingId::PushToTalk,
+                    at_ms,
+                },
             ) => {
                 let held = at_ms.saturating_sub(started_ms);
                 if held >= HOLD_MIN_MS {
@@ -121,19 +124,36 @@ impl StateMachine {
             // --- Second tap within the window flips into hands-free ---------
             (
                 DictationState::AwaitingLock { tap_up_ms },
-                TriggerToken::Down { binding: BindingId::PushToTalk, at_ms },
+                TriggerToken::Down {
+                    binding: BindingId::PushToTalk,
+                    at_ms,
+                },
             ) if at_ms.saturating_sub(tap_up_ms) <= DOUBLE_TAP_MS => {
                 self.begin(RecordMode::Locked, at_ms)
             }
 
             // --- Re-press ends a locked (hands-free) session ----------------
             (
-                DictationState::Recording { mode: RecordMode::Locked, session, .. },
-                TriggerToken::Down { binding: BindingId::PushToTalk, .. },
+                DictationState::Recording {
+                    mode: RecordMode::Locked,
+                    session,
+                    ..
+                },
+                TriggerToken::Down {
+                    binding: BindingId::PushToTalk,
+                    ..
+                },
             )
             | (
-                DictationState::Recording { mode: RecordMode::Locked, session, .. },
-                TriggerToken::Down { binding: BindingId::HandsFree, .. },
+                DictationState::Recording {
+                    mode: RecordMode::Locked,
+                    session,
+                    ..
+                },
+                TriggerToken::Down {
+                    binding: BindingId::HandsFree,
+                    ..
+                },
             ) => self.finalize(session),
 
             // --- Esc cancels from any active state --------------------------
@@ -183,7 +203,12 @@ impl StateMachine {
                 vec![Action::ShowBar(BarState::Idle)]
             }
             // Session cap: warn near the limit, auto-stop at it.
-            DictationState::Recording { session, started_ms, warned, mode } => {
+            DictationState::Recording {
+                session,
+                started_ms,
+                warned,
+                mode,
+            } => {
                 let elapsed = now_ms.saturating_sub(started_ms);
                 if elapsed >= SESSION_CAP_MS {
                     self.finalize(session)
@@ -262,11 +287,19 @@ mod tests {
         let mut m = StateMachine::new();
         let a = m.step(down(BindingId::PushToTalk, 0));
         assert!(matches!(a[0], Action::StartCapture { .. }));
-        assert!(matches!(m.state(), DictationState::Recording { mode: RecordMode::PushToTalk, .. }));
+        assert!(matches!(
+            m.state(),
+            DictationState::Recording {
+                mode: RecordMode::PushToTalk,
+                ..
+            }
+        ));
 
         // Held well past HOLD_MIN_MS → finalize.
         let a = m.step(up(BindingId::PushToTalk, 1_000));
-        assert!(a.iter().any(|x| matches!(x, Action::StopCaptureAndFinalize { .. })));
+        assert!(a
+            .iter()
+            .any(|x| matches!(x, Action::StopCaptureAndFinalize { .. })));
         assert!(a.iter().any(|x| matches!(x, Action::RunPipeline { .. })));
         assert!(matches!(m.state(), DictationState::Finalizing { .. }));
     }
@@ -282,12 +315,22 @@ mod tests {
 
         // Second press within DOUBLE_TAP_MS → locked recording.
         let a = m.step(down(BindingId::PushToTalk, 200));
-        assert!(a.iter().any(|x| matches!(x, Action::ShowBar(BarState::Locked))));
-        assert!(matches!(m.state(), DictationState::Recording { mode: RecordMode::Locked, .. }));
+        assert!(a
+            .iter()
+            .any(|x| matches!(x, Action::ShowBar(BarState::Locked))));
+        assert!(matches!(
+            m.state(),
+            DictationState::Recording {
+                mode: RecordMode::Locked,
+                ..
+            }
+        ));
 
         // Re-press ends the locked session.
         let a = m.step(down(BindingId::PushToTalk, 5_000));
-        assert!(a.iter().any(|x| matches!(x, Action::StopCaptureAndFinalize { .. })));
+        assert!(a
+            .iter()
+            .any(|x| matches!(x, Action::StopCaptureAndFinalize { .. })));
     }
 
     #[test]
@@ -296,8 +339,12 @@ mod tests {
         m.step(down(BindingId::PushToTalk, 0));
         m.step(up(BindingId::PushToTalk, 50));
         // No second press; tick past the window.
-        let a = m.step(Input::Tick { now_ms: 50 + DOUBLE_TAP_MS + 1 });
-        assert!(a.iter().any(|x| matches!(x, Action::ShowBar(BarState::Idle))));
+        let a = m.step(Input::Tick {
+            now_ms: 50 + DOUBLE_TAP_MS + 1,
+        });
+        assert!(a
+            .iter()
+            .any(|x| matches!(x, Action::ShowBar(BarState::Idle))));
         assert!(matches!(m.state(), DictationState::Idle));
         // Crucially, no pipeline ever ran.
         assert!(!a.iter().any(|x| matches!(x, Action::RunPipeline { .. })));
@@ -309,7 +356,9 @@ mod tests {
         m.step(down(BindingId::PushToTalk, 0));
         let a = m.step(Input::Trigger(TriggerToken::Cancel { at_ms: 300 }));
         assert!(a.iter().any(|x| matches!(x, Action::DiscardCapture { .. })));
-        assert!(a.iter().any(|x| matches!(x, Action::ShowBar(BarState::Cancelled))));
+        assert!(a
+            .iter()
+            .any(|x| matches!(x, Action::ShowBar(BarState::Cancelled))));
         assert!(matches!(m.state(), DictationState::Idle));
     }
 
@@ -318,14 +367,19 @@ mod tests {
         let mut m = StateMachine::new();
         m.step(down(BindingId::PushToTalk, 0));
         m.step(up(BindingId::PushToTalk, 1_000)); // finalize
-        m.step(Input::Pipeline(PipelineEvent::Committed { session: SessionId(1) }));
+        m.step(Input::Pipeline(PipelineEvent::Committed {
+            session: SessionId(1),
+        }));
         // last_end came from... pipeline doesn't set last_end; cancel/tick do.
         // A press during cooldown after a *cancel* is what we guard; verify via cancel path.
         let mut m2 = StateMachine::new();
         m2.step(down(BindingId::PushToTalk, 0));
         m2.step(Input::Trigger(TriggerToken::Cancel { at_ms: 100 })); // sets last_end=100
         let a = m2.step(down(BindingId::PushToTalk, 100 + COOLDOWN_MS - 1));
-        assert!(a.is_empty(), "a press within the cooldown window is ignored");
+        assert!(
+            a.is_empty(),
+            "a press within the cooldown window is ignored"
+        );
         let a = m2.step(down(BindingId::PushToTalk, 100 + COOLDOWN_MS + 1));
         assert!(!a.is_empty(), "a press after cooldown starts a new session");
     }
@@ -337,10 +391,16 @@ mod tests {
         let a = m.step(Input::Tick { now_ms: WARN_AT_MS });
         assert!(a.iter().any(|x| matches!(x, Action::WarnSessionCap)));
         // Warning fires once.
-        let a = m.step(Input::Tick { now_ms: WARN_AT_MS + 1 });
+        let a = m.step(Input::Tick {
+            now_ms: WARN_AT_MS + 1,
+        });
         assert!(!a.iter().any(|x| matches!(x, Action::WarnSessionCap)));
         // At the cap, auto-finalize.
-        let a = m.step(Input::Tick { now_ms: SESSION_CAP_MS });
-        assert!(a.iter().any(|x| matches!(x, Action::StopCaptureAndFinalize { .. })));
+        let a = m.step(Input::Tick {
+            now_ms: SESSION_CAP_MS,
+        });
+        assert!(a
+            .iter()
+            .any(|x| matches!(x, Action::StopCaptureAndFinalize { .. })));
     }
 }

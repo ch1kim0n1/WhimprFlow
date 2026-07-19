@@ -153,7 +153,10 @@ pub enum TapEventKind {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ShellToSidecar {
     /// First message; negotiates protocol version.
-    Hello { protocol_version: u32, shell_pid: u32 },
+    Hello {
+        protocol_version: u32,
+        shell_pid: u32,
+    },
     /// Replace the set of chords the sidecar watches for.
     UpdateShortcuts { bindings: Vec<Binding> },
     /// Toggle OS-quirk suppression (bare-Fn Globe action on macOS; Win key-up on Windows).
@@ -248,7 +251,10 @@ mod tests {
     #[test]
     fn paste_options_default_is_privacy_preserving() {
         let d = PasteOptions::default();
-        assert!(d.concealed, "dictated text must stay out of clipboard history by default");
+        assert!(
+            d.concealed,
+            "dictated text must stay out of clipboard history by default"
+        );
         assert!(d.restore_clipboard);
     }
 }

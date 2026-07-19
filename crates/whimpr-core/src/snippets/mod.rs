@@ -55,7 +55,8 @@ impl SnippetStore {
     /// Remove an entry by its trigger (case-insensitive). Returns true if removed.
     pub fn remove(&mut self, trigger: &str) -> bool {
         let before = self.entries.len();
-        self.entries.retain(|e| !e.trigger.eq_ignore_ascii_case(trigger));
+        self.entries
+            .retain(|e| !e.trigger.eq_ignore_ascii_case(trigger));
         self.entries.len() != before
     }
 
@@ -72,7 +73,8 @@ impl SnippetStore {
 
         let mut best: Option<&SnippetEntry> = None;
         for e in &self.entries {
-            let is_match = whole.eq_ignore_ascii_case(&e.trigger) || contains_whole_word(trimmed, &e.trigger);
+            let is_match =
+                whole.eq_ignore_ascii_case(&e.trigger) || contains_whole_word(trimmed, &e.trigger);
             if is_match {
                 let is_longer = best
                     .map(|b| e.trigger.chars().count() > b.trigger.chars().count())
@@ -103,7 +105,7 @@ fn contains_whole_word(input: &str, phrase: &str) -> bool {
         if !boundary_before {
             continue;
         }
-        let matches = (0..plen).all(|k| chars[i + k].to_ascii_lowercase() == p[k].to_ascii_lowercase());
+        let matches = (0..plen).all(|k| chars[i + k].eq_ignore_ascii_case(&p[k]));
         if matches {
             let boundary_after = i + plen == n || !chars[i + plen].is_alphanumeric();
             if boundary_after {
@@ -137,7 +139,9 @@ mod tests {
     fn mid_sentence_match_requires_whole_word_boundaries() {
         let s = store();
         // Standalone phrase inside a longer utterance -> matches.
-        let m = s.find_match("please send my email now").expect("should match");
+        let m = s
+            .find_match("please send my email now")
+            .expect("should match");
         assert_eq!(m.trigger, "my email");
 
         // "my email" is a substring of "my emailing" but not a whole word -> no match.
@@ -158,10 +162,14 @@ mod tests {
     #[test]
     fn case_insensitive_trigger_matching() {
         let s = store();
-        let m = s.find_match("MY EMAIL").expect("should match case-insensitively");
+        let m = s
+            .find_match("MY EMAIL")
+            .expect("should match case-insensitively");
         assert_eq!(m.trigger, "my email");
 
-        let m2 = s.find_match("Please send Best Regards to the client").expect("should match");
+        let m2 = s
+            .find_match("Please send Best Regards to the client")
+            .expect("should match");
         assert_eq!(m2.trigger, "best regards");
     }
 
@@ -170,7 +178,9 @@ mod tests {
         let mut s = SnippetStore::default();
         s.add("address".into(), "short".into());
         s.add("my address".into(), "long".into());
-        let m = s.find_match("please send my address now").expect("should match");
+        let m = s
+            .find_match("please send my address now")
+            .expect("should match");
         assert_eq!(m.trigger, "my address");
     }
 

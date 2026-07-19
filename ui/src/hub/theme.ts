@@ -9,7 +9,7 @@ export type ThemeMode = "light" | "dark";
 
 // Consumers keep using `theme.pageBg` etc.; each value resolves to a live CSS var.
 type Keys =
-  | "pageBg" | "sidebarBg" | "cardBg" | "cardBgSubtle" | "track" | "hover"
+  | "pageBg" | "sidebarBg" | "sidebarGradient" | "cardBg" | "cardBgSubtle" | "track" | "hover"
   | "border" | "borderStrong"
   | "textStrong" | "textBody" | "textMuted" | "textFaint"
   | "accent" | "accentDeep" | "accentBright" | "accentSoft" | "accentSoftHover" | "accentSoftBorder"
@@ -18,7 +18,7 @@ type Keys =
   | "solidBg" | "solidText";
 
 const KEYS: Keys[] = [
-  "pageBg", "sidebarBg", "cardBg", "cardBgSubtle", "track", "hover",
+  "pageBg", "sidebarBg", "sidebarGradient", "cardBg", "cardBgSubtle", "track", "hover",
   "border", "borderStrong",
   "textStrong", "textBody", "textMuted", "textFaint",
   "accent", "accentDeep", "accentBright", "accentSoft", "accentSoftHover", "accentSoftBorder",
@@ -32,6 +32,7 @@ export const theme = Object.fromEntries(KEYS.map((k) => [k, `var(--wf-${k})`])) 
 const LIGHT: Record<Keys, string> = {
   pageBg: "#F6F4EF",
   sidebarBg: "#F1ECE3",
+  sidebarGradient: "linear-gradient(165deg, #F7F2E9 0%, #EEF3EF 48%, #E6F4F0 100%)",
   cardBg: "#FFFFFF",
   cardBgSubtle: "#FBFAF7",
   track: "#ECE7DD",
@@ -60,6 +61,7 @@ const LIGHT: Record<Keys, string> = {
 const DARK: Record<Keys, string> = {
   pageBg: "#0F1217",
   sidebarBg: "#0B0E12",
+  sidebarGradient: "linear-gradient(165deg, #111823 0%, #0C151A 48%, #0B1216 100%)",
   cardBg: "#171B22",
   cardBgSubtle: "#13161C",
   track: "#1E232C",

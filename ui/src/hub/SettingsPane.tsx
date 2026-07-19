@@ -164,6 +164,14 @@ function PermRow({
   );
 }
 
+function GitHubMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M12 2C6.48 2 2 6.59 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-1.05-.01-1.91-2.78.62-3.37-1.2-3.37-1.2-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.63.07-.63 1 .08 1.54 1.06 1.54 1.06.9 1.57 2.35 1.12 2.92.86.09-.67.35-1.12.64-1.38-2.22-.26-4.56-1.15-4.56-5.1 0-1.13.39-2.05 1.03-2.77-.1-.26-.45-1.31.1-2.73 0 0 .84-.28 2.75 1.06A9.28 9.28 0 0 1 12 7.16c.85 0 1.71.12 2.51.34 1.91-1.34 2.75-1.06 2.75-1.06.55 1.42.2 2.47.1 2.73.64.72 1.03 1.64 1.03 2.77 0 3.96-2.35 4.83-4.58 5.09.36.33.68.96.68 1.94 0 1.4-.01 2.53-.01 2.87 0 .27.18.59.69.49A10.26 10.26 0 0 0 22 12.25C22 6.59 17.52 2 12 2Z" />
+    </svg>
+  );
+}
+
 export function SettingsPane({
   settings,
   onChange,
@@ -321,7 +329,26 @@ export function SettingsPane({
         </div>
       </Card>
 
-      <Card>
+      <Card style={{ marginBottom: 16 }}>
+        <SectionTitle icon="shield" sub="Replace inappropriate words and curses in the text WhimprFlow inserts. This is off by default.">
+          Safe Mode
+        </SectionTitle>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <div style={{ color: theme.textMuted, fontSize: 13, lineHeight: 1.45, maxWidth: 430 }}>
+            Redaction happens after cleanup, so it also protects transcripts returned by cloud providers.
+          </div>
+          <Segmented
+            options={[
+              { value: "on", label: "On" },
+              { value: "off", label: "Off" },
+            ]}
+            value={settings.safe_mode ? "on" : "off"}
+            onChange={(value) => onChange({ ...settings, safe_mode: value === "on" })}
+          />
+        </div>
+      </Card>
+
+      <Card style={{ marginBottom: 16 }}>
         <SectionTitle icon="shield" sub="Grant these to WhimprFlow, then quit and reopen the app if a dot stays grey.">
           Permissions
         </SectionTitle>
@@ -361,6 +388,19 @@ export function SettingsPane({
             }}
           />
         </div>
+      </Card>
+
+      <Card>
+        <SectionTitle sub="WhimprFlow is built in the open.">About</SectionTitle>
+        <a
+          href="https://github.com/Blueturboguy07/WhimprFlow"
+          target="_blank"
+          rel="noreferrer"
+          style={{ display: "inline-flex", alignItems: "center", gap: 9, borderRadius: 10, padding: "10px 13px", color: theme.textStrong, background: theme.cardBgSubtle, border: `1px solid ${theme.border}`, textDecoration: "none", fontSize: 13.5, fontWeight: 650 }}
+        >
+          <GitHubMark />
+          View on GitHub
+        </a>
       </Card>
     </div>
   );

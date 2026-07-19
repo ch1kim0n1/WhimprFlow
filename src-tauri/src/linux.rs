@@ -93,7 +93,9 @@ fn support_dir() -> std::path::PathBuf {
         }
     }
     let home = std::env::var("HOME").unwrap_or_default();
-    std::path::PathBuf::from(home).join(".config").join("WhimprFlow")
+    std::path::PathBuf::from(home)
+        .join(".config")
+        .join("WhimprFlow")
 }
 fn settings_path() -> std::path::PathBuf {
     support_dir().join("settings.json")
@@ -140,7 +142,10 @@ fn unix_now() -> u64 {
 }
 
 fn now_ms() -> u64 {
-    CLOCK.get().map(|c| c.elapsed().as_millis() as u64).unwrap_or(0)
+    CLOCK
+        .get()
+        .map(|c| c.elapsed().as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn emit_bar(state: &'static str) {
@@ -217,13 +222,21 @@ fn clean_transcript(raw: &str) -> String {
     let settings = current_settings_inner();
     let level = settings.cleanup_level;
     if matches!(settings.cleanup_mode, CleanupMode::Raw) || level.bypasses_llm() {
-        return raw.to_string();
+        return if settings.safe_mode {
+            whimpr_core::redact_inappropriate_words(raw)
+        } else {
+            raw.to_string()
+        };
     }
     let raw_norm = whimpr_core::cleanup::pre_normalize_layout(raw);
     let raw_out = whimpr_core::cleanup::post_process(&raw_norm);
     let vocab = DICTIONARY
         .get()
-        .map(|d| d.lock().unwrap_or_else(|e| e.into_inner()).prefilter(&raw_norm, 15))
+        .map(|d| {
+            d.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .prefilter(&raw_norm, 15)
+        })
         .unwrap_or_default();
     let ctx = CleanupContext {
         level,
@@ -233,21 +246,29 @@ fn clean_transcript(raw: &str) -> String {
     };
     let run_local = || -> Option<anyhow::Result<String>> {
         LOCAL.get().and_then(|m| {
-            m.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(|w| {
-                let messages = whimpr_core::cleanup::build_messages(&raw_norm, &ctx);
-                w.cleanup(&messages)
-            })
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_mut()
+                .map(|w| {
+                    let messages = whimpr_core::cleanup::build_messages(&raw_norm, &ctx);
+                    w.cleanup(&messages)
+                })
         })
     };
     let result = match settings.cleanup_mode {
         CleanupMode::OpenAi => OPENAI
             .get()
-            .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|p| p.cleanup(&raw_norm, &ctx)))
+            .and_then(|m| {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .map(|p| p.cleanup(&raw_norm, &ctx))
+            })
             .or_else(run_local),
         CleanupMode::Local => run_local(),
         _ => run_local(),
     };
-    match result {
+    let final_text = match result {
         Some(Ok(cleaned)) => {
             let cleaned = whimpr_core::cleanup::post_process(&cleaned);
             if whimpr_core::cleanup::evaluate_gates(&raw_out, &cleaned, level).passed() {
@@ -257,6 +278,11 @@ fn clean_transcript(raw: &str) -> String {
             }
         }
         _ => raw_out,
+    };
+    if settings.safe_mode {
+        whimpr_core::redact_inappropriate_words(&final_text)
+    } else {
+        final_text
     }
 }
 
@@ -284,7 +310,10 @@ fn on_ptt_down() {
     emit_bar("recording");
     std::thread::spawn(|| match whimpr_audio::start(|_: &[f32]| {}) {
         Ok(handle) => {
-            *CAPTURE.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
+            *CAPTURE
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(handle);
         }
         Err(e) => eprintln!("[whimpr:linux] mic capture failed: {e}"),
     });
@@ -296,7 +325,9 @@ fn on_ptt_up() {
     }
     emit_bar("idle");
     let app = foreground_app();
-    let handle = CAPTURE.get().and_then(|slot| slot.lock().unwrap_or_else(|e| e.into_inner()).take());
+    let handle = CAPTURE
+        .get()
+        .and_then(|slot| slot.lock().unwrap_or_else(|e| e.into_inner()).take());
     std::thread::spawn(move || {
         let Some(res) = handle.and_then(|h| h.stop()) else {
             return;
@@ -330,8 +361,14 @@ fn keycode_for_keysym<C: Connection>(conn: &C, target: u32) -> Option<u8> {
     let setup = conn.setup();
     let min_kc = setup.min_keycode;
     let max_kc = setup.max_keycode;
-    let count = (max_kc as u16).saturating_sub(min_kc as u16).saturating_add(1) as u8;
-    let mapping = conn.get_keyboard_mapping(min_kc, count).ok()?.reply().ok()?;
+    let count = (max_kc as u16)
+        .saturating_sub(min_kc as u16)
+        .saturating_add(1) as u8;
+    let mapping = conn
+        .get_keyboard_mapping(min_kc, count)
+        .ok()?
+        .reply()
+        .ok()?;
     let per = mapping.keysyms_per_keycode as usize;
     if per == 0 {
         return None;
@@ -352,14 +389,22 @@ fn run_hotkey_loop() -> anyhow::Result<()> {
     let (conn, screen_num) = x11rb::connect(None)?;
     let root = conn.setup().roots[screen_num].root;
 
-    let keycode = keycode_for_keysym(&conn, XK_CONTROL_R)
-        .ok_or_else(|| anyhow::anyhow!("no keycode maps to XK_Control_R (Right Ctrl) on this keyboard layout"))?;
+    let keycode = keycode_for_keysym(&conn, XK_CONTROL_R).ok_or_else(|| {
+        anyhow::anyhow!("no keycode maps to XK_Control_R (Right Ctrl) on this keyboard layout")
+    })?;
 
     // NOTE: unverified against the exact x11rb version pinned here  -  if `modifiers`
     // or `pointer_mode`/`keyboard_mode` don't accept `ModMask::ANY` / `GrabMode::ASYNC`
     // directly, adjust to whatever this crate version's grab_key signature expects.
-    conn.grab_key(true, root, ModMask::ANY, keycode, GrabMode::ASYNC, GrabMode::ASYNC)?
-        .check()?;
+    conn.grab_key(
+        true,
+        root,
+        ModMask::ANY,
+        keycode,
+        GrabMode::ASYNC,
+        GrabMode::ASYNC,
+    )?
+    .check()?;
     conn.flush()?;
     eprintln!("[whimpr:linux] X11 key grab installed (push-to-talk: Right Ctrl, X11 only  -  see linux.rs doc comment for Wayland)");
 
@@ -442,21 +487,29 @@ pub fn rebuild_providers() {
         .and_then(|e| e.get_password().ok())
         .filter(|k| !k.trim().is_empty());
     if let Some(slot) = OPENAI.get() {
-        *slot.lock().unwrap_or_else(|e| e.into_inner()) = key.map(|k| {
-            whimpr_cleanup::OpenAiProvider::with_base_url(k, model, Some(base_url))
-        });
+        *slot.lock().unwrap_or_else(|e| e.into_inner()) =
+            key.map(|k| whimpr_cleanup::OpenAiProvider::with_base_url(k, model, Some(base_url)));
     }
 }
 
 pub fn stats_summary(tz_offset_minutes: i32) -> StatsSummary {
     STATS
         .get()
-        .map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).summary(tz_offset_minutes, unix_now()))
-        .unwrap_or_else(|| whimpr_core::StatsStore::default().summary(tz_offset_minutes, unix_now()))
+        .map(|m| {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .summary(tz_offset_minutes, unix_now())
+        })
+        .unwrap_or_else(|| {
+            whimpr_core::StatsStore::default().summary(tz_offset_minutes, unix_now())
+        })
 }
 
 pub fn history(limit: usize) -> Vec<whimpr_core::HistoryItem> {
-    STATS.get().map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).history(limit)).unwrap_or_default()
+    STATS
+        .get()
+        .map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).history(limit))
+        .unwrap_or_default()
 }
 
 pub fn dictionary_entries() -> Vec<crate::hotkey::DictEntryDto> {

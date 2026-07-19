@@ -13,6 +13,7 @@ pub mod asr;
 pub mod backup;
 pub mod cleanup;
 pub mod dictionary;
+pub mod safety;
 pub mod settings;
 pub mod snippets;
 pub mod state;
@@ -22,8 +23,11 @@ pub mod types;
 pub use asr::{AsrEngine, AsrEngineId, Transcript};
 pub use cleanup::{CleanupContext, CleanupLevel, CleanupProvider, ProviderId, VocabEntry};
 pub use dictionary::{DictSource, DictionaryEntry, DictionaryStore};
+pub use safety::redact_inappropriate_words;
 pub use settings::{Chord, CleanupMode, Formality, Key, KeyBindings, Settings, StyleProfile};
 pub use snippets::{SnippetEntry, SnippetStore};
+pub use state::{
+    Action, BarState, DictationState, Input, PipelineEvent, StateMachine, TriggerToken,
+};
 pub use stats::{HistoryItem, SessionRecord, StatsStore, StatsSummary};
-pub use state::{Action, BarState, DictationState, Input, PipelineEvent, StateMachine, TriggerToken};
 pub use types::{RecordMode, SessionId};

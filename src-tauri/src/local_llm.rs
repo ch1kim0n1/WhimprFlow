@@ -20,9 +20,21 @@ impl LocalWorker {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()?;
-        let stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("no stdin"))?;
-        let stdout = BufReader::new(child.stdout.take().ok_or_else(|| anyhow::anyhow!("no stdout"))?);
-        Ok(Self { child, stdin, stdout })
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("no stdin"))?;
+        let stdout = BufReader::new(
+            child
+                .stdout
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("no stdout"))?,
+        );
+        Ok(Self {
+            child,
+            stdin,
+            stdout,
+        })
     }
 
     /// Send one cleanup request (system prompt + few-shot turns + transcript) and
@@ -45,7 +57,10 @@ impl LocalWorker {
         if let Some(err) = v.get("error").and_then(|e| e.as_str()) {
             anyhow::bail!("local llm: {err}");
         }
-        Ok(v.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string())
+        Ok(v.get("text")
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string())
     }
 }
 

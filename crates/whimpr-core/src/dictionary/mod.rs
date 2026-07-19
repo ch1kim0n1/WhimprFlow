@@ -31,7 +31,8 @@ static COMMON_WORDS: OnceLock<HashSet<&'static str>> = OnceLock::new();
 /// True if `word` is one of the ~5000 most common English words (case-insensitive).
 /// Used as the primary "is this word too common to auto-learn?" gate.
 pub fn is_common_word(word: &str) -> bool {
-    let set = COMMON_WORDS.get_or_init(|| COMMON_WORDS_RAW.lines().filter(|l| !l.is_empty()).collect());
+    let set =
+        COMMON_WORDS.get_or_init(|| COMMON_WORDS_RAW.lines().filter(|l| !l.is_empty()).collect());
     let lc = word.to_lowercase();
     set.contains(lc.as_str())
 }
@@ -180,7 +181,8 @@ impl DictionaryStore {
     /// Remove an entry by its spelling (case-insensitive). Returns true if removed.
     pub fn remove(&mut self, correct: &str) -> bool {
         let before = self.entries.len();
-        self.entries.retain(|e| !e.correct.eq_ignore_ascii_case(correct));
+        self.entries
+            .retain(|e| !e.correct.eq_ignore_ascii_case(correct));
         self.entries.len() != before
     }
 
@@ -257,7 +259,11 @@ mod tests {
 
     fn store() -> DictionaryStore {
         let mut s = DictionaryStore::default();
-        s.add("Manvi", vec!["Monvi".into(), "Manvee".into()], DictSource::Manual);
+        s.add(
+            "Manvi",
+            vec!["Monvi".into(), "Manvee".into()],
+            DictSource::Manual,
+        );
         s.add("ChargeBee", vec!["charge bee".into()], DictSource::Manual);
         s
     }
@@ -289,6 +295,12 @@ mod tests {
         s.add("manvi", vec!["Manvie".into()], DictSource::Auto);
         let e = s.entries.iter().find(|e| e.correct == "Manvi").unwrap();
         assert!(e.mishears.iter().any(|m| m == "Manvie"));
-        assert_eq!(s.entries.iter().filter(|e| e.correct.eq_ignore_ascii_case("manvi")).count(), 1);
+        assert_eq!(
+            s.entries
+                .iter()
+                .filter(|e| e.correct.eq_ignore_ascii_case("manvi"))
+                .count(),
+            1
+        );
     }
 }

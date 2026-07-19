@@ -1,9 +1,8 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="public/whimprflow-logo-light.png" />
-    <img src="public/whimprflow-logo-dark.png" alt="WhimprFlow" width="520" />
-  </picture>
+  <img src="public/whimprflow-app-icon-256.png" alt="WhimprFlow app icon" width="96" />
 </p>
+
+<h1 align="center">WhimprFlow</h1>
 
 <p align="center"><strong>Private voice dictation that keeps up with your thinking.</strong></p>
 
@@ -13,15 +12,15 @@
 </p>
 
 <p align="center">
-  <img src="public/whimprflow-app-icon-256.png" alt="WhimprFlow app icon" width="96" />
+  <a href="#quick-start">Quick Start</a> · <a href="#capabilities">Capabilities</a> · <a href="#platform-notes">Platform Notes</a>
 </p>
 
-> **Project status:** Active development. The core desktop workflow is implemented, but this repository is not yet a signed, installer-ready release. See [Platform Notes](#platform-notes) for known boundaries.
+> **Project status:** Active development. The core desktop workflow is implemented, but this repository is not yet a signed, installer-ready release. See [Platform Notes](#platform-notes) for current boundaries.
 
 ## Product Preview
 
 <p align="center">
-  <img src="public/readme-hub.png" alt="WhimprFlow Hub showing the local-first dictation workspace" width="100%" />
+  <img src="public/readme-hub.png" alt="WhimprFlow Hub showing the local-first dictation workspace" width="92%" />
 </p>
 
 The Hub is the command center for dictation preferences, personal vocabulary, snippets, transforms, shortcuts, and local usage insights. During dictation, a compact always-on-top Flow Bar communicates recording and cleanup state without interrupting the app you are working in.
