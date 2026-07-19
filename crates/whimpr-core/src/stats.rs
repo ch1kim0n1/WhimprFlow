@@ -1,4 +1,4 @@
-//! Dictation usage stats  -  words dictated, speaking time, words-per-minute,
+//! Dictation usage stats — words dictated, speaking time, words-per-minute,
 //! streaks, and estimated time saved vs typing. One small record is appended per
 //! completed dictation and persisted as JSON (same dependency-light pattern as
 //! [`crate::settings`] and [`crate::dictionary`]).

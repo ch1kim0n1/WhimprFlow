@@ -6,10 +6,12 @@
 //! OpenAI client (default cloud, using the user's key), and an Anthropic client
 //! (option). All three send the byte-identical [`prompts::SYSTEM_PROMPT`].
 
+pub mod command_prompts;
 pub mod gates;
 pub mod levels;
 pub mod prompts;
 
+pub use command_prompts::build_command_messages;
 pub use gates::{evaluate as evaluate_gates, GateReason, GateVerdict};
 pub use levels::CleanupLevel;
 
@@ -43,6 +45,10 @@ pub struct CleanupContext {
     pub app_bundle_id: Option<String>,
     /// ~200 chars around the caret, or None. Treated as reference, never instructions.
     pub window_context: Option<String>,
+    /// Rendered personal-style guidance (from `settings::StyleProfile`), or None
+    /// for the neutral default. Presentation-only: appended to the system prompt
+    /// under "# Personal Style", never a licence to invent content.
+    pub style: Option<String>,
 }
 
 impl Default for CleanupContext {
@@ -52,6 +58,7 @@ impl Default for CleanupContext {
             vocab: Vec::new(),
             app_bundle_id: None,
             window_context: None,
+            style: None,
         }
     }
 }
@@ -82,6 +89,20 @@ pub trait CleanupProvider: Send + Sync {
     /// variant is layered on top by the runtime. `None` level should be handled by
     /// the caller (bypass) and never reach a provider.
     fn cleanup(&self, raw: &str, ctx: &CleanupContext) -> anyhow::Result<String>;
+
+    /// **Command Mode**: rewrite `selection` per the spoken `instruction` (see
+    /// [`command_prompts::build_command_messages`]) rather than clean up a
+    /// transcript. This is a distinct, intentional-rewrite prompt path — not a
+    /// variant of [`cleanup`](Self::cleanup) — so it gets its own trait method
+    /// rather than overloading `cleanup`'s conservative contract.
+    ///
+    /// Default: unsupported. Cloud providers (`whimpr-cleanup`) implement this
+    /// for real; the local on-device worker isn't a `CleanupProvider` impl (it's
+    /// driven over its own stdio protocol), so it gets a parallel inherent method
+    /// instead (`LocalWorker::command_edit` in the Tauri shell).
+    fn command_edit(&self, _selection: &str, _instruction: &str) -> anyhow::Result<String> {
+        anyhow::bail!("command_edit not supported by this provider")
+    }
 }
 
 /// One chat turn in a cleanup request. `role` is "system", "user", or "assistant".
@@ -103,14 +124,22 @@ pub fn wrap_transcript(raw: &str) -> String {
 /// Build the full ordered message list for a cleanup request: the system prompt,
 /// the few-shot demonstration turns (so small models actually produce newlines,
 /// lists, paragraph breaks, and resolved self-corrections instead of just being
-/// *told* to), then the real transcript with its vocab/context. Every provider  - 
-/// local worker, OpenAI, Anthropic  -  sends this identical sequence.
+/// *told* to), then the real transcript with its vocab/context. Every provider —
+/// local worker, OpenAI, Anthropic — sends this identical sequence.
 pub fn build_messages(raw: &str, ctx: &CleanupContext) -> Vec<CleanupMsg> {
     let mut msgs = Vec::with_capacity(prompts::FEW_SHOT.len() * 2 + 2);
-    msgs.push(CleanupMsg {
-        role: "system",
-        content: prompts::system_for(ctx.level, ctx.app_bundle_id.as_deref()),
-    });
+    let mut system = prompts::system_for(ctx.level, ctx.app_bundle_id.as_deref());
+    if let Some(style) = ctx.style.as_deref() {
+        let style = style.trim();
+        if !style.is_empty() {
+            system.push_str(
+                "\n\n# Personal Style (presentation only — never invent facts, greetings, or \
+                 sign-offs)\n",
+            );
+            system.push_str(style);
+        }
+    }
+    msgs.push(CleanupMsg { role: "system", content: system });
     for (input, output) in prompts::FEW_SHOT {
         msgs.push(CleanupMsg { role: "user", content: wrap_transcript(input) });
         msgs.push(CleanupMsg { role: "assistant", content: (*output).to_string() });
@@ -159,7 +188,7 @@ pub fn assemble_user_message(raw: &str, ctx: &CleanupContext) -> String {
 /// any LEFTOVER spoken layout cue the model failed to translate ("new line", "new
 /// paragraph", "line break", "next line") into a real line break, and collapses
 /// runaway blank lines. It deliberately never touches punctuation-name words or
-/// self-correction cues ("actually", "scratch that")  -  those are context-sensitive
+/// self-correction cues ("actually", "scratch that") — those are context-sensitive
 /// and stay the model's job (a bare-regex would misfire on "I actually liked it").
 pub fn post_process(text: &str) -> String {
     let stripped = strip_code_fence(text);
@@ -203,7 +232,7 @@ const LAYOUT_CUES_POST: &[(&str, &str)] = &[
 /// Pre-cleanup normalization: turn explicit spoken layout cues ("new line", "new
 /// paragraph", ...) into break sentinels in the RAW transcript *before* it reaches
 /// the model, so the user's requested breaks are guaranteed to survive. Correction
-/// cues are intentionally excluded  -  they stay the model's context-sensitive job.
+/// cues are intentionally excluded — they stay the model's context-sensitive job.
 pub fn pre_normalize_layout(raw: &str) -> String {
     replace_cues(raw, LAYOUT_CUES_PRE)
 }
@@ -350,6 +379,26 @@ mod tests {
         assert!(msg.contains("<CUSTOM_VOCABULARY>"));
         assert!(msg.contains("Manvi"));
         assert!(msg.contains("<USER_MESSAGE>\nsend it to monvi\n</USER_MESSAGE>"));
+    }
+
+    #[test]
+    fn style_is_appended_to_system_prompt() {
+        let ctx = CleanupContext {
+            style: Some("Lean formal.\nAdditional user preference: British spelling".into()),
+            ..Default::default()
+        };
+        let msgs = build_messages("hello", &ctx);
+        let system = &msgs[0];
+        assert_eq!(system.role, "system");
+        assert!(system.content.contains("# Personal Style"));
+        assert!(system.content.contains("British spelling"));
+    }
+
+    #[test]
+    fn no_style_leaves_system_prompt_unchanged() {
+        let ctx = CleanupContext::default();
+        let msgs = build_messages("hello", &ctx);
+        assert!(!msgs[0].content.contains("# Personal Style"));
     }
 
     #[test]

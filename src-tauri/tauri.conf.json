@@ -30,7 +30,7 @@
     "macOS": {
       "minimumSystemVersion": "14.0",
       "entitlements": "Entitlements.plist",
-      "signingIdentity": "Apple Development: mannbellani@icloud.com (82C6H67AZF)"
+      "signingIdentity": "-"
     }
   }
 }

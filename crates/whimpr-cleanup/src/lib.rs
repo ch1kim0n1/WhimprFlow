@@ -1,16 +1,18 @@
 //! Cloud cleanup providers. The OpenAI provider (default cloud) sends the shared
 //! WhimprFlow system prompt plus the assembled context and returns cleaned text.
-//! On any failure the caller falls back to the raw transcript  -  cleanup is an
+//! On any failure the caller falls back to the raw transcript — cleanup is an
 //! enhancement, never a gate.
 
 use std::time::Duration;
 
-use whimpr_core::cleanup::{build_messages, CleanupContext, CleanupProvider, ProviderId};
+use whimpr_core::cleanup::{
+    build_command_messages, build_messages, CleanupContext, CleanupProvider, ProviderId,
+};
 
 /// Default OpenAI Chat Completions endpoint.
 const OPENAI_DEFAULT_URL: &str = "https://api.openai.com/v1/chat/completions";
 
-/// Cleanup via the OpenAI Chat Completions API  -  or any OpenAI-compatible
+/// Cleanup via the OpenAI Chat Completions API — or any OpenAI-compatible
 /// endpoint (OpenRouter, a local server, etc.) when `base_url` is set.
 /// OpenRouter in particular speaks this exact wire format at
 /// `https://openrouter.ai/api/v1/chat/completions`.
@@ -93,6 +95,46 @@ impl CleanupProvider for OpenAiProvider {
         }
         Ok(text)
     }
+
+    /// Command Mode: same HTTP call shape as `cleanup`, built from
+    /// `build_command_messages` (instruction-following rewrite) instead of
+    /// `build_messages` (conservative transcript cleanup).
+    fn command_edit(&self, selection: &str, instruction: &str) -> anyhow::Result<String> {
+        let messages: Vec<serde_json::Value> = build_command_messages(selection, instruction)?
+            .into_iter()
+            .map(|m| serde_json::json!({ "role": m.role, "content": m.content }))
+            .collect();
+        let body = serde_json::json!({
+            "model": self.model,
+            "temperature": 0.3,
+            "max_tokens": 1024,
+            "messages": messages,
+        });
+
+        let resp = self
+            .client
+            .post(&self.url)
+            .bearer_auth(&self.api_key)
+            .json(&body)
+            .send()?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let detail = resp.text().unwrap_or_default();
+            anyhow::bail!("OpenAI HTTP {status}: {detail}");
+        }
+
+        let v: serde_json::Value = resp.json()?;
+        let text = v["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if text.is_empty() {
+            anyhow::bail!("OpenAI returned empty content");
+        }
+        Ok(text)
+    }
 }
 
 /// Cleanup via the Anthropic Messages API. Same shared system prompt; the only
@@ -138,6 +180,53 @@ impl CleanupProvider for AnthropicProvider {
             "model": self.model,
             "max_tokens": 512,
             "temperature": 0.2,
+            "system": system,
+            "messages": messages,
+        });
+
+        let resp = self
+            .client
+            .post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .json(&body)
+            .send()?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let detail = resp.text().unwrap_or_default();
+            anyhow::bail!("Anthropic HTTP {status}: {detail}");
+        }
+
+        let v: serde_json::Value = resp.json()?;
+        let text = v["content"][0]["text"]
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if text.is_empty() {
+            anyhow::bail!("Anthropic returned empty content");
+        }
+        Ok(text)
+    }
+
+    /// Command Mode: same HTTP call shape as `cleanup`, built from
+    /// `build_command_messages` (instruction-following rewrite) instead of
+    /// `build_messages` (conservative transcript cleanup).
+    fn command_edit(&self, selection: &str, instruction: &str) -> anyhow::Result<String> {
+        let mut system = String::new();
+        let mut messages: Vec<serde_json::Value> = Vec::new();
+        for m in build_command_messages(selection, instruction)? {
+            if m.role == "system" {
+                system = m.content;
+            } else {
+                messages.push(serde_json::json!({ "role": m.role, "content": m.content }));
+            }
+        }
+        let body = serde_json::json!({
+            "model": self.model,
+            "max_tokens": 1024,
+            "temperature": 0.3,
             "system": system,
             "messages": messages,
         });

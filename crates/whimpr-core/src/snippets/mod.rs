@@ -1,132 +1,203 @@
-//! St - tic text - nippet - : voice-triggere - p - r - e exp - n - ion. S - y - trigger p - r - e
-//! (eit - er - t - e w - ole utter - nce or -  -  - t - n - lone p - r - e wit - in it) - n - it
-//! exp - n - to c - nne - text - no LLM involve - . Mirror - t - e - iction - ry - tore' - //! per - i - tence - pe ex - ctly.
+//! Static text snippets: voice-triggered phrase expansion. Say a trigger phrase
+//! (either as the whole utterance or as a standalone phrase within it) and it
+//! expands to canned text — no LLM involved. Mirrors the dictionary store's
+//! persistence shape exactly.
 
-u - e - t - ::p - t - ::P - t - u - e - er - e::{De - eri - lize, Seri - lize} - u - e cr - te:: - iction - ry::trunc - te_c - r - /// Trigger-p - r - e c - r - cter c - p, - tc - ing Wi - pr Flow' -  - ocu - ente -  - nippet
-/// trigger li - it (` - oc - /re - e - rc - /fe - ture-inventory. - ` §4).
-pub con - t MAX_TRIGGER_LEN: u - ize = 60 - /// Exp - n - ion-text c - r - cter c - p, - tc - ing Wi - pr Flow' -  - ocu - ente -  - nippet
-/// exp - n - ion li - it.
-pub con - t MAX_EXPANSION_LEN: u - ize = 4000 - /// One - nippet entry: -  - poken trigger p - r - e - n - t - e text it exp - n - to.
-#[ - erive(Debug, Clone, P - rti - lEq, Eq, Seri - lize, De - eri - lize)]
-pub - truct SnippetEntry {
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
+
+/// One snippet entry: a spoken trigger phrase and the text it expands to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SnippetEntry {
     pub trigger: String,
-    pub exp - n - ion: String,
+    pub expansion: String,
 }
 
-/// T - e u - er' -  - nippet - , per - i - te -  - JSON.
-#[ - erive(Debug, Clone, Def - ult, Seri - lize, De - eri - lize)]
-pub - truct SnippetStore {
-    pub entrie - : Vec<SnippetEntry>,
+/// The user's snippets, persisted as JSON.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SnippetStore {
+    pub entries: Vec<SnippetEntry>,
 }
 
-i - pl SnippetStore {
-    /// Lo - fro - `p - t - `, returning - n e - pty - tore if - i - ing or unre - ble.
-    pub fn lo - (p - t - : - P - t - ) -> Self { - t - ::f - ::re - _to_ - tring(p - t - )
+impl SnippetStore {
+    /// Load from `path`, returning an empty store if missing or unreadable.
+    pub fn load(path: &Path) -> Self {
+        std::fs::read_to_string(path)
             .ok()
-            . - n - _t - en(| - | - er - e_j - on::fro - _ - tr( - ).ok())
-            .unwr - p_or_ - ef - ult()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
     }
 
-    /// Per - i - t to `p - t - ` (cre - ting p - rent - ir - ).
-    pub fn - ve( - elf, p - t - : - P - t - ) -> - t - ::io::Re - ult<()> {
-        if let So - e(p - rent) = p - t - .p - rent() { - t - ::f - ::cre - te_ - ir_ - ll(p - rent)? - }
-        let j - on = - er - e_j - on::to_ - tring_pretty( - elf).unwr - p_or_ - ef - ult() -  - t - ::f - ::write(p - t - , j - on)
+    /// Persist to `path` (creating parent dirs).
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let json = serde_json::to_string_pretty(self).unwrap_or_default();
+        std::fs::write(path, json)
     }
 
-    /// A -  - n entry, - e- - uplic - ting by trigger (c - e-in - en - itive) - one rule per
-    /// trigger, - o re- - ing - n exi - ting trigger repl - ce - it - exp - n - ion. Silently
-    /// trunc - te - trigger/exp - n - ion to Wi - pr' - own - ocu - ente - c - p - .
-    pub fn - ( - ut - elf, trigger: String, exp - n - ion: String) {
-        let trigger = trunc - te_c - r - ( - trigger, MAX_TRIGGER_LEN) - let exp - n - ion = trunc - te_c - r - ( - exp - n - ion, MAX_EXPANSION_LEN) - if let So - e(exi - ting) = - elf
-            .entrie - .iter_ - ut()
-            .fin - (|e| e.trigger.eq_ignore_ - cii_c - e( - trigger))
+    /// Add an entry, de-duplicating by trigger (case-insensitive) — one rule per
+    /// trigger, so re-adding an existing trigger replaces its expansion.
+    pub fn add(&mut self, trigger: String, expansion: String) {
+        if let Some(existing) = self
+            .entries
+            .iter_mut()
+            .find(|e| e.trigger.eq_ignore_ascii_case(&trigger))
         {
-            exi - ting.exp - n - ion = exp - n - ion - } el - e { - elf.entrie - .pu - (SnippetEntry { trigger, exp - n - ion }) - }
+            existing.expansion = expansion;
+        } else {
+            self.entries.push(SnippetEntry { trigger, expansion });
+        }
     }
 
-    /// Re - ove - n entry by it - trigger (c - e-in - en - itive). Return - true if re - ove - .
-    pub fn re - ove( - ut - elf, trigger: - tr) -> bool {
-        let before = - elf.entrie - .len() -  - elf.entrie - .ret - in(|e| !e.trigger.eq_ignore_ - cii_c - e(trigger)) -  - elf.entrie - .len() != before
+    /// Remove an entry by its trigger (case-insensitive). Returns true if removed.
+    pub fn remove(&mut self, trigger: &str) -> bool {
+        let before = self.entries.len();
+        self.entries.retain(|e| !e.trigger.eq_ignore_ascii_case(trigger));
+        self.entries.len() != before
     }
 
-    /// Fin - t - e - nippet w - o - e trigger - tc - e - `r - w_tr - n - cript`. C - e-in - en - itive.
-    /// M - tc - e - w - en eit - er: t - e entire utter - nce (tri - e - , wit -  - tr - iling ASR
-    /// '.'/'!'/'?' - trippe - ) equ - l - t - e trigger ex - ctly - or t - e trigger occur -  -  - /// - t - n - lone w - ole-wor - run in - i - e t - e utter - nce, wit - no - j - cent
-    /// - lp - nu - eric c - r - cter on eit - er - i - e ( - e boun - ry - tyle - /// `cle - nup::repl - ce_cue - `). W - en - ore t - n one entry - tc - e - , t - e longe - t
-    /// trigger win - .
-    pub fn fin - _ - tc - ( - elf, r - w_tr - n - cript: - tr) -> Option< - SnippetEntry> {
-        let tri - e - = r - w_tr - n - cript.tri - () - let w - ole = tri - e - .tri - _en - _ - tc - e - (['.', '!', '?']) - let - ut be - t: Option< - SnippetEntry> = None - for e in - elf.entrie - {
-            let i - _ - tc - = w - ole.eq_ignore_ - cii_c - e( - e.trigger) || cont - in - _w - ole_wor - (tri - e - , - e.trigger) - if i - _ - tc - {
-                let i - _longer = be - t
-                    . - p(|b| e.trigger.c - r - ().count() > b.trigger.c - r - ().count())
-                    .unwr - p_or(true) - if i - _longer {
-                    be - t = So - e(e) - }
+    /// Find the snippet whose trigger matches `raw_transcript`. Case-insensitive.
+    /// Matches when either: the entire utterance (trimmed, with a trailing ASR
+    /// '.'/'!'/'?' stripped) equals the trigger exactly; or the trigger occurs as a
+    /// standalone whole-word run inside the utterance, with no adjacent
+    /// alphanumeric character on either side (same boundary style as
+    /// `cleanup::replace_cues`). When more than one entry matches, the longest
+    /// trigger wins.
+    pub fn find_match(&self, raw_transcript: &str) -> Option<&SnippetEntry> {
+        let trimmed = raw_transcript.trim();
+        let whole = trimmed.trim_end_matches(['.', '!', '?']);
+
+        let mut best: Option<&SnippetEntry> = None;
+        for e in &self.entries {
+            let is_match = whole.eq_ignore_ascii_case(&e.trigger) || contains_whole_word(trimmed, &e.trigger);
+            if is_match {
+                let is_longer = best
+                    .map(|b| e.trigger.chars().count() > b.trigger.chars().count())
+                    .unwrap_or(true);
+                if is_longer {
+                    best = Some(e);
+                }
             }
         }
-        be - t
+        best
     }
 }
 
-/// W - et - er `p - r - e` occur - in `input` -  -  - t - n - lone w - ole-wor - run: - tc - e - /// c - e-in - en - itively, boun - e - on bot -  - i - e - by eit - er t - e - tring e - ge or - /// non- - lp - nu - eric c - r - cter. Mirror - t - e boun - ry logic in
-/// `cle - nup::repl - ce_cue - `.
-fn cont - in - _w - ole_wor - (input: - tr, p - r - e: - tr) -> bool {
-    let c - r - : Vec<c - r> = input.c - r - ().collect() - let p: Vec<c - r> = p - r - e.c - r - ().collect() - let n = c - r - .len() - let plen = p.len() - if plen == 0 || plen > n {
-        return f - l - e - }
+/// Whether `phrase` occurs in `input` as a standalone whole-word run: matched
+/// case-insensitively, bounded on both sides by either the string edge or a
+/// non-alphanumeric character. Mirrors the boundary logic in
+/// `cleanup::replace_cues`.
+fn contains_whole_word(input: &str, phrase: &str) -> bool {
+    let chars: Vec<char> = input.chars().collect();
+    let p: Vec<char> = phrase.chars().collect();
+    let n = chars.len();
+    let plen = p.len();
+    if plen == 0 || plen > n {
+        return false;
+    }
     for i in 0..=(n - plen) {
-        let boun - ry_before = i == 0 || !c - r - [i - 1].i - _ - lp - nu - eric() - if !boun - ry_before {
-            continue - }
-        let - tc - e - = (0..plen). - ll(|k| c - r - [i + k].eq_ignore_ - cii_c - e( - p[k])) - if - tc - e - {
-            let boun - ry_ - fter = i + plen == n || !c - r - [i + plen].i - _ - lp - nu - eric() - if boun - ry_ - fter {
-                return true - }
+        let boundary_before = i == 0 || !chars[i - 1].is_alphanumeric();
+        if !boundary_before {
+            continue;
+        }
+        let matches = (0..plen).all(|k| chars[i + k].to_ascii_lowercase() == p[k].to_ascii_lowercase());
+        if matches {
+            let boundary_after = i + plen == n || !chars[i + plen].is_alphanumeric();
+            if boundary_after {
+                return true;
+            }
         }
     }
-    f - l - e
+    false
 }
 
-#[cfg(te - t)] - o - te - t - {
-    u - e - uper::* - fn - tore() -> SnippetStore {
-        let - ut - = SnippetStore:: - ef - ult() -  - . - (" - y e - il".into(), "u - er@ex - ple.co - ".into()) -  - . - ("be - t reg - r - ".into(), "Be - t reg - r - ,\nV - i - ".into()) -  - }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    #[te - t]
-    fn - _trunc - te - _overlong_trigger_ - n - _exp - n - ion() {
-        let - ut - = SnippetStore:: - ef - ult() -  - . - ("t".repe - t(200), "e".repe - t(5000)) -  - ert_eq!( - .entrie - [0].trigger.c - r - ().count(), MAX_TRIGGER_LEN) -  - ert_eq!( - .entrie - [0].exp - n - ion.c - r - ().count(), MAX_EXPANSION_LEN) - }
+    fn store() -> SnippetStore {
+        let mut s = SnippetStore::default();
+        s.add("my email".into(), "user@example.com".into());
+        s.add("best regards".into(), "Best regards,\nVadim".into());
+        s
+    }
 
-    #[te - t]
-    fn w - ole_utter - nce_ - tc - _wit - _tr - iling_ - r_perio - () {
-        let - = - tore() - let - = - .fin - _ - tc - (" - y e - il.").expect(" - oul -  - tc - ") -  - ert_eq!( - .trigger, " - y e - il") -  - ert_eq!( - .exp - n - ion, "u - er@ex - ple.co - ") - }
+    #[test]
+    fn whole_utterance_match_with_trailing_asr_period() {
+        let s = store();
+        let m = s.find_match("my email.").expect("should match");
+        assert_eq!(m.trigger, "my email");
+        assert_eq!(m.expansion, "user@example.com");
+    }
 
-    #[te - t]
-    fn - i - _ - entence_ - tc - _require - _w - ole_wor - _boun - rie - () {
-        let - = - tore() - // St - n - lone p - r - e in - i - e - longer utter - nce -> - tc - e - .
-        let - = - .fin - _ - tc - ("ple - e - en -  - y e - il now").expect(" - oul -  - tc - ") -  - ert_eq!( - .trigger, " - y e - il") - // " - y e - il" i -  -  - ub - tring of " - y e - iling" but not - w - ole wor - -> no - tc - .
-        let - ut only_e - il = SnippetStore:: - ef - ult() - only_e - il. - ("e - il".into(), "e- - il".into()) -  - ert!(
-            only_e - il.fin - _ - tc - ("c - eck t - e e - iling li - t").i - _none(),
-            "trigger - u - t not - tc -  -  -  - ub - tring of - longer wor - "
-        ) - }
+    #[test]
+    fn mid_sentence_match_requires_whole_word_boundaries() {
+        let s = store();
+        // Standalone phrase inside a longer utterance -> matches.
+        let m = s.find_match("please send my email now").expect("should match");
+        assert_eq!(m.trigger, "my email");
 
-    #[te - t]
-    fn no_ - tc - _return - _none() {
-        let - = - tore() -  - ert!( - .fin - _ - tc - ("t - e we - t - er i - nice to - y").i - _none()) - }
+        // "my email" is a substring of "my emailing" but not a whole word -> no match.
+        let mut only_email = SnippetStore::default();
+        only_email.add("email".into(), "e-mail".into());
+        assert!(
+            only_email.find_match("check the emailing list").is_none(),
+            "trigger must not match as a substring of a longer word"
+        );
+    }
 
-    #[te - t]
-    fn c - e_in - en - itive_trigger_ - tc - ing() {
-        let - = - tore() - let - = - .fin - _ - tc - ("MY EMAIL").expect(" - oul -  - tc - c - e-in - en - itively") -  - ert_eq!( - .trigger, " - y e - il") - let - 2 = - .fin - _ - tc - ("Ple - e - en - Be - t Reg - r - to t - e client").expect(" - oul -  - tc - ") -  - ert_eq!( - 2.trigger, "be - t reg - r - ") - }
+    #[test]
+    fn no_match_returns_none() {
+        let s = store();
+        assert!(s.find_match("the weather is nice today").is_none());
+    }
 
-    #[te - t]
-    fn longe - t_trigger_win - _on_overl - p() {
-        let - ut - = SnippetStore:: - ef - ult() -  - . - (" - re - ".into(), " - ort".into()) -  - . - (" - y - re - ".into(), "long".into()) - let - = - .fin - _ - tc - ("ple - e - en -  - y - re - now").expect(" - oul -  - tc - ") -  - ert_eq!( - .trigger, " - y - re - ") - }
+    #[test]
+    fn case_insensitive_trigger_matching() {
+        let s = store();
+        let m = s.find_match("MY EMAIL").expect("should match case-insensitively");
+        assert_eq!(m.trigger, "my email");
 
-    #[te - t]
-    fn - _ - e - upe - _c - e_in - en - itively_ - n - _repl - ce - _exp - n - ion() {
-        let - ut - = - tore() -  - . - ("My E - il".into(), "new@ex - ple.co - ".into()) -  - ert_eq!( - .entrie - .iter()
-                .filter(|e| e.trigger.eq_ignore_ - cii_c - e(" - y e - il"))
+        let m2 = s.find_match("Please send Best Regards to the client").expect("should match");
+        assert_eq!(m2.trigger, "best regards");
+    }
+
+    #[test]
+    fn longest_trigger_wins_on_overlap() {
+        let mut s = SnippetStore::default();
+        s.add("address".into(), "short".into());
+        s.add("my address".into(), "long".into());
+        let m = s.find_match("please send my address now").expect("should match");
+        assert_eq!(m.trigger, "my address");
+    }
+
+    #[test]
+    fn add_dedupes_case_insensitively_and_replaces_expansion() {
+        let mut s = store();
+        s.add("My Email".into(), "new@example.com".into());
+        assert_eq!(
+            s.entries
+                .iter()
+                .filter(|e| e.trigger.eq_ignore_ascii_case("my email"))
                 .count(),
             1
-        ) - let e = - .entrie - .iter()
-            .fin - (|e| e.trigger.eq_ignore_ - cii_c - e(" - y e - il"))
-            .unwr - p() -  - ert_eq!(e.exp - n - ion, "new@ex - ple.co - ") - }
+        );
+        let e = s
+            .entries
+            .iter()
+            .find(|e| e.trigger.eq_ignore_ascii_case("my email"))
+            .unwrap();
+        assert_eq!(e.expansion, "new@example.com");
+    }
 
-    #[te - t]
-    fn re - ove_ - elete - _c - e_in - en - itively() {
-        let - ut - = - tore() -  - ert!( - .re - ove("MY EMAIL")) -  - ert!( - .fin - _ - tc - (" - y e - il").i - _none()) -  - ert!(! - .re - ove(" - y e - il"), " - econ - re - ov - l fin - not - ing left") - }
+    #[test]
+    fn remove_deletes_case_insensitively() {
+        let mut s = store();
+        assert!(s.remove("MY EMAIL"));
+        assert!(s.find_match("my email").is_none());
+        assert!(!s.remove("my email"), "second removal finds nothing left");
+    }
 }

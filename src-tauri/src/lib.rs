@@ -2,7 +2,7 @@
 //!
 //! Runs as a macOS accessory (menu-bar) app: a tray item, a transparent
 //! always-on-top Flow Bar overlay, and a hidden Hub window. This is the M0
-//! skeleton  -  the sidecar supervisor, real state-machine bridge, and native
+//! skeleton — the sidecar supervisor, real state-machine bridge, and native
 //! panel promotion arrive in later milestones. The overlay already listens for
 //! `whimpr://flowbar/state`, so the tray demo items prove the event pipeline.
 
@@ -13,6 +13,8 @@ mod local_llm;
 mod paste;
 #[cfg(target_os = "windows")]
 mod win;
+#[cfg(target_os = "linux")]
+mod linux;
 
 use serde::Serialize;
 use tauri::{
@@ -39,7 +41,7 @@ fn position_overlay(w: &WebviewWindow) {
         .or_else(|| w.current_monitor().ok().flatten())
         .or_else(|| w.available_monitors().ok().and_then(|m| m.into_iter().next()));
     let Some(monitor) = monitor else {
-        eprintln!("[whimpr] no monitor found  -  overlay stays at default position");
+        eprintln!("[whimpr] no monitor found — overlay stays at default position");
         return;
     };
     let scale = monitor.scale_factor();
@@ -134,6 +136,24 @@ fn remove_dictionary_entry(correct: String) {
     hotkey::dictionary_remove(&correct);
 }
 
+/// Snippet entries for the Hub Snippets screen.
+#[tauri::command]
+fn get_snippets() -> Vec<whimpr_core::SnippetEntry> {
+    hotkey::snippet_entries()
+}
+
+/// Add (or replace, if the trigger already exists) a voice-triggered text snippet.
+#[tauri::command]
+fn add_snippet(trigger: String, expansion: String) {
+    hotkey::snippet_add(trigger, expansion);
+}
+
+/// Remove a snippet by its trigger phrase.
+#[tauri::command]
+fn remove_snippet(trigger: String) {
+    hotkey::snippet_remove(&trigger);
+}
+
 /// Permission + capability status shown in the Hub.
 #[derive(Clone, Serialize)]
 struct StatusReport {
@@ -184,7 +204,7 @@ fn request_microphone() {
     }
 }
 
-/// Request Accessibility  -  the permission that makes the Fn key work in every app and
+/// Request Accessibility — the permission that makes the Fn key work in every app and
 /// lets us type into other apps. Fire the native prompt, then open the pane.
 #[tauri::command]
 fn request_accessibility() {
@@ -206,6 +226,66 @@ fn request_input_monitoring() {
     }
 }
 
+/// Called by the overlay pill's Stop button to end a locked hands-free session —
+/// the UI equivalent of the re-press-to-finalize hotkey transition. A no-op
+/// unless a session is actually locked.
+#[tauri::command]
+fn confirm_dictation() {
+    hotkey::confirm_dictation();
+}
+
+/// Called by the overlay pill's Cancel button (mirrors the Escape key) to
+/// discard whatever dictation is currently in flight. A no-op when idle.
+#[tauri::command]
+fn cancel_dictation() {
+    hotkey::cancel_dictation();
+}
+
+/// Manual Command Mode test hook: runs the instruction-following rewrite prompt
+/// against `selection`/`instruction` through whichever cleanup provider is
+/// currently configured, without needing to actually hold the Fn+Ctrl hotkey,
+/// grant Accessibility, or dictate audio. macOS-only for now (mirrors
+/// `hotkey::test_command_edit`); a full diff-viewer UI is out of scope for this
+/// pass, this just proves the prompt + provider layer end to end.
+#[tauri::command]
+fn test_command_edit(selection: String, instruction: String) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        hotkey::test_command_edit(selection, instruction)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (selection, instruction);
+        Err("Command Mode test hook is only implemented on macOS in this pass".to_string())
+    }
+}
+
+/// Run a **Transform**: rewrite `text` per a canned `instruction` (e.g. "rewrite
+/// this as a polished email") through whichever cleanup provider is configured.
+/// Reuses the Command Mode prompt + provider path — a Transform is just Command
+/// Mode with a preset instruction instead of a spoken one. macOS-only in this
+/// pass, same as the Command Mode test hook it shares plumbing with.
+#[tauri::command]
+fn run_transform(text: String, instruction: String) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        hotkey::test_command_edit(text, instruction)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (text, instruction);
+        Err("Transforms are only implemented on macOS in this pass".to_string())
+    }
+}
+
+/// Copy settings/dictionary/snippets/stats into a fresh timestamped folder
+/// under the app's support directory. Returns the created folder's path on
+/// success so the UI can show the user exactly where it went.
+#[tauri::command]
+fn backup_data() -> Result<String, String> {
+    hotkey::backup_data()
+}
+
 /// Save (or clear, when empty) an API key in the OS keychain, then rebuild providers
 /// so it takes effect immediately.
 #[tauri::command]
@@ -219,7 +299,7 @@ fn set_api_key(provider: String, key: String) -> Result<(), String> {
         keyring::Entry::new("com.whimpr.whimprflow", account).map_err(|e| e.to_string())?;
     let key = key.trim();
     // Delete any existing item first so the new one is created by (and readable to)
-    // this app  -  a key added via the `security` CLI isn't readable by the app.
+    // this app — a key added via the `security` CLI isn't readable by the app.
     let _ = entry.delete_credential();
     if !key.is_empty() {
         entry.set_password(key).map_err(|e| e.to_string())?;
@@ -238,11 +318,19 @@ pub fn run() {
             get_dictionary,
             add_dictionary_entry,
             remove_dictionary_entry,
+            get_snippets,
+            add_snippet,
+            remove_snippet,
             get_status,
             request_microphone,
             request_accessibility,
             request_input_monitoring,
-            set_api_key
+            set_api_key,
+            confirm_dictation,
+            cancel_dictation,
+            test_command_edit,
+            run_transform,
+            backup_data
         ])
         .setup(|app| {
             // Regular app: shows in the Dock with a normal, focusable main window.

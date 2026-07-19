@@ -1,4 +1,4 @@
-//! `whimpr-core`  -  the platform-agnostic brain of WhimprFlow.
+//! `whimpr-core` — the platform-agnostic brain of WhimprFlow.
 //!
 //! Everything here is shared verbatim between macOS and Windows. Native concerns
 //! (the hotkey hook, text injection, accessibility reads) live in the sidecar; the
@@ -10,9 +10,11 @@
 //! settings, and storage modules.
 
 pub mod asr;
+pub mod backup;
 pub mod cleanup;
 pub mod dictionary;
 pub mod settings;
+pub mod snippets;
 pub mod state;
 pub mod stats;
 pub mod types;
@@ -20,7 +22,8 @@ pub mod types;
 pub use asr::{AsrEngine, AsrEngineId, Transcript};
 pub use cleanup::{CleanupContext, CleanupLevel, CleanupProvider, ProviderId, VocabEntry};
 pub use dictionary::{DictSource, DictionaryEntry, DictionaryStore};
-pub use settings::{CleanupMode, Settings};
+pub use settings::{Chord, CleanupMode, Formality, Key, KeyBindings, Settings, StyleProfile};
+pub use snippets::{SnippetEntry, SnippetStore};
 pub use stats::{HistoryItem, SessionRecord, StatsStore, StatsSummary};
 pub use state::{Action, BarState, DictationState, Input, PipelineEvent, StateMachine, TriggerToken};
 pub use types::{RecordMode, SessionId};

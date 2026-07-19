@@ -1,380 +1,503 @@
-//! Linux pl - tfor - l - yer for W - i - prFlow: - n X11 glob - l- - otkey gr - b for pu - -to-t - lk,
-//! clipbo - r - +`x - otool` text injection, - n - be - t-effort foregroun - - - pp - etection,
-//! plu - t - e - e - ict - tion pipeline ( - u - io → W - i - per ASR → cle - nup LLM → p - te) - n - //! t - e Hub-f - cing - etting - / - t - t - / - iction - ry function - t - e T - uri co - n - c - ll.
+//! Linux platform layer for WhimprFlow: an X11 global-hotkey grab for push-to-talk,
+//! clipboard+`xdotool` text injection, and best-effort foreground-app detection,
+//! plus the same dictation pipeline (audio → Whisper ASR → cleanup LLM → paste) and
+//! the Hub-facing settings/stats/dictionary functions the Tauri commands call.
 //!
-//! ⚠️ UNVERIFIED: t - i -  - o - ule w - written on - cOS, wit - out - Linux - c - ine to buil - //! or run it - g - in - t, - irroring `cr - te::win`' -  - tructure ( - n - it - own prece - ent - //! - ee t - t file' -  - oc co - ent). T - e - re - cr - te - ( - u - io, ASR, cle - nup, core) - re
-//! cro - -pl - tfor - , but t - i - X11 glue - never been co - pile - . It i - //! `cfg(t - rget_o - = "linux")` - o it - oe - not - ffect -  - n - i - not c - ecke - by - t - e
-//! - cOS buil - . Tre - t it -  -  - t - rting point, not -  - ipping port.
+//! ⚠️ UNVERIFIED: this module was written on macOS, without a Linux machine to build
+//! or run it against, mirroring `crate::win`'s structure (and its own precedent —
+//! see that file's doc comment). The shared crates (audio, ASR, cleanup, core) are
+//! cross-platform, but this X11 glue has never been compiled. It is
+//! `cfg(target_os = "linux")` so it does not affect — and is not checked by — the
+//! macOS build. Treat it as a starting point, not a shipping port.
 //!
-//! Scope - n -  - i - plific - tion -  - e in t - i - p - ( - ll - ocu - ente - inline below too):
+//! Scope and simplifications made in this pass (all documented inline below too):
 //!
-//! - **X11 only - no W - yl - n - .** Hotkey -  - n - win - ow/p - te API -  - iffer co - pletely on
-//!   W - yl - n - (no glob - l key gr - b - wit - out - co - po - itor- - pecific glob - l- - ortcut - //!   port - l, no - ynt - etic input wit - out `wlr-virtu - l-pointer`/`x - g- - e - ktop-port - l`
-//!   re - ote- - e - ktop per - i - ion). Wiring t - e W - yl - n - port - l p - t - i - explicitly out of
-//! - cope for t - i - p -  - **follow-up work**, not - tte - pte -  - ere. On - W - yl - n - //! - e - ion t - i -  - o - ule will - i - ply f - il to connect to - n X - erver (unle - XW - yl - n - //!   i -  - ctive, in w - ic - c - e it will only - ee X11 client - ) - n - log - n error r - t - er
-//!   t - n - ilently - oing not - ing.
-//! - **XGr - bKey, not XRecor - Exten - ion.** A full XRecor - t - p ( - irroring - cOS' - //!   li - ten-only CGEventT - p or Win - ow - ' low-level keybo - r -  - ook) woul -  - ee t - e key
-//!   glob - lly wit - out exclu - ively gr - bbing it fro - ot - er - pp - . Wiring t - e XRecor - //!   exten - ion' -  - etup blin - (unco - pile - ) i -  - e - ningfully - ore involve -  - n - ri - kier
-//!   to get rig - t t - n t - e core-protocol `XGr - bKey`, - o v1 u - e - `XGr - bKey` on - //! - ingle - r - co - e - key (Rig - t Ctrl, `XK_Control_R`) wit - `AnyMo - ifier`. T - e
-//!   tr - e-off: t - i - key i - gr - bbe - *exclu - ively* for W - i - prFlow w - ile - el - (no ot - er
-//! - pp - ee - it), - n - only t - t one p - y - ic - l key work -  - no c - or - /re - p - upport.
-//!   Goo - enoug -  -  -  - t - rting point - XRecor - (or t - e W - yl - n - port - l) i - t - e n - tur - l
-//!   next - tep.
-//! - **`x - otool` for p - te - n - foregroun - -win - ow lookup, not r - w XTe - t/ - to - querie - .**
-//!   T - e t - k - llow - eit - er wiring t - e XTe - t exten - ion (`XTe - tF - keKeyEvent`) - irectly
-//!   vi - `x11rb`' - `xte - t` fe - ture, or - elling out to `x - otool` -  - pr - g - tic
-//!   f - llb - ck "if wiring t - e XTe - t exten - ion - irectly prove - too fi - ly." Since t - i - //!   co - e c - nnot be co - pile - or te - te -  - ere, getting t - e XTe - t exten - ion' - ex - ct
-//!   reque - t wiring (fe - ture fl - g - , exten - ion - etup - n - ke, `f - ke_input`' - fiel - //!   or - er) - ubtly wrong woul - f - il - ilently in - w - y t - t' -  - r - to re - on - bout
-//!   fro -  -  - oc co - ent. `x - otool key ctrl+v` i -  -  - ingle well- - ocu - ente - ,
-//!   e - y-to-verify-by-in - pection co - n - , - o it w - c - o - en for bot - t - e p - te - tep
-//! - n - (vi - `x - otool get - ctivewin - ow getwin - owcl - n - e`) foregroun - - - pp - etection
-//! - one - epen - ency, one f - ilure - o - e, bot - re - ble - t - gl - nce. It - oe -  - e - n - n
-//!   `x - otool` bin - ry - u - t be pre - ent on t - e u - er' -  - y - te - (` - pt in - t - ll x - otool` /
-//!   ` - nf in - t - ll x - otool` / `p - c - n -S x - otool`) -  - follow-up coul - ven - or t - e XTe - t
-//!   c - ll -  - irectly vi - `x11rb` to - rop t - t runti - e - epen - ency.
-//! - X11 - uto-repe - t w - ile t - e pu - -to-t - lk key i -  - el - will gener - te repe - te - //!   KeyPre - /KeyRele - e p - ir - `on_ptt_ - own`' - `RECORDING` - w - p-c - eck - lre - y - ke - //!   repe - t key- - own -  - no-op ( - re - wit - Win - ow - / - cOS), but r - pi - -fire
-//!   KeyRele - e-t - en-KeyPre - fro - * - etect - ble* - uto-repe - t coul - in principle c - u - e
-//!   brief flicker. A follow-up coul - en - ble XKB - etect - ble - uto-repe - t
-//!   (`XkbSetDetect - bleAutoRepe - t`) to eli - in - te t - i - not - one - ere.
+//! - **X11 only — no Wayland.** Hotkeys and window/paste APIs differ completely on
+//!   Wayland (no global key grabs without a compositor-specific global-shortcuts
+//!   portal, no synthetic input without `wlr-virtual-pointer`/`xdg-desktop-portal`
+//!   remote-desktop permission). Wiring the Wayland portal path is explicitly out of
+//!   scope for this pass — **follow-up work**, not attempted here. On a Wayland
+//!   session this module will simply fail to connect to an X server (unless XWayland
+//!   is active, in which case it will only see X11 clients) and log an error rather
+//!   than silently doing nothing.
+//! - **XGrabKey, not XRecordExtension.** A full XRecord tap (mirroring macOS's
+//!   listen-only CGEventTap or Windows' low-level keyboard hook) would see the key
+//!   globally without exclusively grabbing it from other apps. Wiring the XRecord
+//!   extension's setup blind (uncompiled) is meaningfully more involved and riskier
+//!   to get right than the core-protocol `XGrabKey`, so v1 uses `XGrabKey` on a
+//!   single hardcoded key (Right Ctrl, `XK_Control_R`) with `AnyModifier`. The
+//!   trade-off: this key is grabbed *exclusively* for WhimprFlow while held (no other
+//!   app sees it), and only that one physical key works — no chord/remap support.
+//!   Good enough as a starting point; XRecord (or the Wayland portal) is the natural
+//!   next step.
+//! - **`xdotool` for paste and foreground-window lookup, not raw XTest/atom queries.**
+//!   The task allows either wiring the XTest extension (`XTestFakeKeyEvent`) directly
+//!   via `x11rb`'s `xtest` feature, or shelling out to `xdotool` as a pragmatic
+//!   fallback "if wiring the XTest extension directly proves too fiddly." Since this
+//!   code cannot be compiled or tested here, getting the XTest extension's exact
+//!   request wiring (feature flags, extension setup handshake, `fake_input`'s field
+//!   order) subtly wrong would fail silently in a way that's hard to reason about
+//!   from a doc comment. `xdotool key ctrl+v` is a single well-documented,
+//!   easy-to-verify-by-inspection command, so it was chosen for both the paste step
+//!   and (via `xdotool getactivewindow getwindowclassname`) foreground-app detection
+//!   — one dependency, one failure mode, both readable at a glance. It does mean an
+//!   `xdotool` binary must be present on the user's system (`apt install xdotool` /
+//!   `dnf install xdotool` / `pacman -S xdotool`); a follow-up could vendor the XTest
+//!   calls directly via `x11rb` to drop that runtime dependency.
+//! - X11 auto-repeat while the push-to-talk key is held will generate repeated
+//!   KeyPress/KeyRelease pairs; `on_ptt_down`'s `RECORDING` swap-check already makes
+//!   repeat key-downs a no-op (shared with Windows/macOS), but rapid-fire
+//!   KeyRelease-then-KeyPress from *detectable* auto-repeat could in principle cause
+//!   brief flicker. A follow-up could enable XKB detectable auto-repeat
+//!   (`XkbSetDetectableAutoRepeat`) to eliminate this; not done here.
 //!
-//! Def - ult pu - -to-t - lk key: Rig - t Ctrl ( - e - ef - ult - `cr - te::win`).
+//! Default push-to-talk key: Right Ctrl (same default as `crate::win`).
 
-#![cfg(t - rget_o - = "linux")]
+#![cfg(target_os = "linux")]
 
-u - e - t - :: - ync:: - to - ic::{Ato - icBool, Or - ering} - u - e - t - :: - ync::{Arc, Mutex, OnceLock} - u - e - t - ::ti - e::{Dur - tion, In - t - nt} - u - e t - uri::{AppH - n - le, E - itter} - u - e x11rb::connection::Connection - u - e x11rb::protocol::xproto::{ConnectionExt - _, Gr - bMo - e, Mo - M - k} - u - e x11rb::protocol::Event - u - e w - i - pr_core::{A - rEngine, Cle - nupContext, Cle - nupMo - e, Cle - nupProvi - er, St - t - Su - ry} - con - t OVERLAY_LABEL: - tr = "w - i - pr_b - r" - /// X11 key - y - for Rig - t Ctrl (`XK_Control_R`, - ee `<X11/key - y - ef. - >`). Pu - -to-t - lk
-/// key - c - or - l - n - in - l - ter p - ( - ee t - e - o - ule - oc co - ent).
-con - t XK_CONTROL_R: u32 = 0xffe4 -  - t - tic APP: OnceLock<AppH - n - le> = OnceLock::new() -  - t - tic CLOCK: OnceLock<In - t - nt> = OnceLock::new() -  - t - tic RECORDING: Ato - icBool = Ato - icBool::new(f - l - e) -  - t - tic CAPTURE: OnceLock<Mutex<Option<w - i - pr_ - u - io::C - ptureH - n - le>>> = OnceLock::new() -  - t - tic ASR: OnceLock<Arc<w - i - pr_ - r::W - i - perEngine>> = OnceLock::new() -  - t - tic LOCAL: OnceLock<Mutex<Option<cr - te::loc - l_ll - ::Loc - lWorker>>> = OnceLock::new() -  - t - tic OPENAI: OnceLock<Mutex<Option<w - i - pr_cle - nup::OpenAiProvi - er>>> = OnceLock::new() -  - t - tic SETTINGS: OnceLock<Mutex<w - i - pr_core::Setting - >> = OnceLock::new() -  - t - tic DICTIONARY: OnceLock<Mutex<w - i - pr_core::Diction - ryStore>> = OnceLock::new() -  - t - tic SNIPPETS: OnceLock<Mutex<w - i - pr_core::SnippetStore>> = OnceLock::new() -  - t - tic STATS: OnceLock<Mutex<w - i - pr_core::St - t - Store>> = OnceLock::new() - fn - upport_ - ir() -> - t - ::p - t - ::P - t - Buf {
-    // $XDG_CONFIG_HOME/W - i - prFlow, f - lling b - ck to ~/.config/W - i - prFlow per t - e XDG
-    // B - e Directory - pec (t - e Linux - n - logue of %APPDATA% / ~/Libr - ry/Applic - tion
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+use tauri::{AppHandle, Emitter};
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::{ConnectionExt as _, GrabMode, ModMask};
+use x11rb::protocol::Event;
+
+use whimpr_core::{AsrEngine, CleanupContext, CleanupMode, CleanupProvider, StatsSummary};
+
+const OVERLAY_LABEL: &str = "whimpr_bar";
+
+/// X11 keysym for Right Ctrl (`XK_Control_R`, see `<X11/keysymdef.h>`). Push-to-talk
+/// key; chords land in a later pass (see the module doc comment).
+const XK_CONTROL_R: u32 = 0xffe4;
+
+static APP: OnceLock<AppHandle> = OnceLock::new();
+static CLOCK: OnceLock<Instant> = OnceLock::new();
+static RECORDING: AtomicBool = AtomicBool::new(false);
+static CAPTURE: OnceLock<Mutex<Option<whimpr_audio::CaptureHandle>>> = OnceLock::new();
+static ASR: OnceLock<Arc<whimpr_asr::WhisperEngine>> = OnceLock::new();
+static LOCAL: OnceLock<Mutex<Option<crate::local_llm::LocalWorker>>> = OnceLock::new();
+static OPENAI: OnceLock<Mutex<Option<whimpr_cleanup::OpenAiProvider>>> = OnceLock::new();
+static SETTINGS: OnceLock<Mutex<whimpr_core::Settings>> = OnceLock::new();
+static DICTIONARY: OnceLock<Mutex<whimpr_core::DictionaryStore>> = OnceLock::new();
+static STATS: OnceLock<Mutex<whimpr_core::StatsStore>> = OnceLock::new();
+
+fn support_dir() -> std::path::PathBuf {
+    // $XDG_CONFIG_HOME/WhimprFlow, falling back to ~/.config/WhimprFlow per the XDG
+    // Base Directory spec (the Linux analogue of %APPDATA% / ~/Library/Application
     // Support).
-    if let Ok(x - g) = - t - ::env::v - r("XDG_CONFIG_HOME") {
-        if !x - g.tri - ().i - _e - pty() {
-            return - t - ::p - t - ::P - t - Buf::fro - (x - g).join("W - i - prFlow") - }
-    }
-    let - o - e = - t - ::env::v - r("HOME").unwr - p_or_ - ef - ult() -  - t - ::p - t - ::P - t - Buf::fro - ( - o - e).join(".config").join("W - i - prFlow")
-}
-fn - etting - _p - t - () -> - t - ::p - t - ::P - t - Buf { - upport_ - ir().join(" - etting - .j - on")
-}
-fn - ict_p - t - () -> - t - ::p - t - ::P - t - Buf { - upport_ - ir().join(" - iction - ry.j - on")
-}
-fn - nippet - _p - t - () -> - t - ::p - t - ::P - t - Buf { - upport_ - ir().join(" - nippet - .j - on")
-}
-fn - t - t - _p - t - () -> - t - ::p - t - ::P - t - Buf { - upport_ - ir().join(" - t - t - .j - on")
-}
-
-/// Copy - etting - / - iction - ry/ - nippet - / - t - t - into - ti - e - t - pe - fol - er un - er
-/// ` - upport_ - ir()/b - ckup - /`. Mirror - ` - otkey.r - `' - `b - ckup_ - t - `.
-pub fn b - ckup_ - t - () -> Re - ult<String, String> {
-    w - i - pr_core::b - ckup::b - ckup_file - ( - [
-            (" - etting - .j - on", - etting - _p - t - ()),
-            (" - iction - ry.j - on", - ict_p - t - ()),
-            (" - nippet - .j - on", - nippet - _p - t - ()),
-            (" - t - t - .j - on", - t - t - _p - t - ()),
-        ], - upport_ - ir().join("b - ckup - "),
-    )
-    . - p(|p| p. - i - pl - y().to_ - tring())
-    . - p_err(|e| e.to_ - tring())
-}
-
-/// `.en`- - uffixe -  - o - el -  - re Engli - -only, - o w - en -  - pecific non-Engli - /// l - ngu - ge i -  - electe - we only con - i - er - ultilingu - l - o - el file - (no `.en`
-/// - uffix) - ot - erwi - e `.en` - o - el -  - re preferre - fir - t for better Engli - /// - ccur - cy, f - lling b - ck to - ultilingu - l file - if none - re pre - ent.
-fn w - i - per_ - o - el_p - t - (l - ngu - ge: Option< - tr>) -> - t - ::p - t - ::P - t - Buf {
-    let - ir = - upport_ - ir().join(" - o - el - ") - let nee - _ - ultilingu - l = - tc - e - !(l - ngu - ge, So - e(l - ng) if l - ng != "en") - let c - n - i - te - : - [ - tr] = if nee - _ - ultilingu - l { - ["gg - l- - e - iu - .bin", "gg - l- - ll.bin", "gg - l-b - e.bin"]
-    } el - e { - [
-            "gg - l- - e - iu - .en.bin",
-            "gg - l- - ll.en.bin",
-            "gg - l-b - e.en.bin",
-            "gg - l- - e - iu - .bin",
-            "gg - l- - ll.bin",
-            "gg - l-b - e.bin",
-        ]
-    } - for n - e in c - n - i - te - {
-        let p = - ir.join(n - e) - if p.exi - t - () {
-            return p - }
-    } - ir.join(c - n - i - te - .l - t().copie - ().unwr - p_or("gg - l-b - e.en.bin"))
-}
-
-fn unix_now() -> u64 { - t - ::ti - e::Sy - te - Ti - e::now()
-        . - ur - tion_ - ince( - t - ::ti - e::UNIX_EPOCH)
-        . - p(| - | - . - _ - ec - ())
-        .unwr - p_or(0)
-}
-
-fn now_ - () -> u64 {
-    CLOCK.get(). - p(|c| c.el - p - e - (). - _ - illi - () - u64).unwr - p_or(0)
-}
-
-fn e - it_b - r( - t - te: - ' - t - tic - tr) {
-    if let So - e( - pp) = APP.get() {
-        #[ - erive(Clone, - er - e::Seri - lize)] - truct P { - t - te: - ' - t - tic - tr,
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.trim().is_empty() {
+            return std::path::PathBuf::from(xdg).join("WhimprFlow");
         }
-        let _ = - pp.e - it_to(OVERLAY_LABEL, "w - i - pr://flowb - r/ - t - te", P { - t - te }) - }
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    std::path::PathBuf::from(home).join(".config").join("WhimprFlow")
+}
+fn settings_path() -> std::path::PathBuf {
+    support_dir().join("settings.json")
+}
+fn dict_path() -> std::path::PathBuf {
+    support_dir().join("dictionary.json")
+}
+fn stats_path() -> std::path::PathBuf {
+    support_dir().join("stats.json")
+}
+/// `.en`-suffixed models are English-only, so when a specific non-English
+/// language is selected we only consider multilingual model files (no `.en`
+/// suffix); otherwise `.en` models are preferred first for better English
+/// accuracy, falling back to multilingual files if none are present.
+fn whisper_model_path(language: Option<&str>) -> std::path::PathBuf {
+    let dir = support_dir().join("models");
+    let needs_multilingual = matches!(language, Some(lang) if lang != "en");
+    let candidates: &[&str] = if needs_multilingual {
+        &["ggml-medium.bin", "ggml-small.bin", "ggml-base.bin"]
+    } else {
+        &[
+            "ggml-medium.en.bin",
+            "ggml-small.en.bin",
+            "ggml-base.en.bin",
+            "ggml-medium.bin",
+            "ggml-small.bin",
+            "ggml-base.bin",
+        ]
+    };
+    for name in candidates {
+        let p = dir.join(name);
+        if p.exists() {
+            return p;
+        }
+    }
+    dir.join(candidates.last().copied().unwrap_or("ggml-base.en.bin"))
 }
 
-/// T - e focu - e - win - ow' - WM_CLASS (e.g. "firefox"), for per- - pp cle - nup for - tting - /// t - e Linux - n - logue of t - e - cOS bun - le i - / Win - ow - execut - ble n - e.
-///
-/// Pr - g - tic c - oice: - ell - out to `x - otool` ( - lre - y require - for `p - te_text`
-/// below) in - te - of - n - -rolling `_NET_ACTIVE_WINDOW` + `WM_CLASS` X11
-/// - to - /property querie -  -  - ee t - e - o - ule - oc co - ent for w - y. Be - t-effort: return - /// `None` on - ny f - ilure (no `x - otool`, no - ctive win - ow, non-EWMH win - ow - n - ger,
-/// W - yl - n - /XW - yl - n - o - itie - , ...) r - t - er t - n erroring t - e pipeline.
-fn foregroun - _ - pp() -> Option<String> {
-    let out = - t - ::proce - ::Co - n - ::new("x - otool")
-        . - rg - (["get - ctivewin - ow", "getwin - owcl - n - e"])
-        .output()
-        .ok()? - if !out. - t - tu - . - ucce - () {
-        return None - }
-    let n - e = String::fro - _utf8_lo - y( - out. - t - out).tri - ().to_ - tring() - if n - e.i - _e - pty() {
-        None
-    } el - e {
-        So - e(n - e)
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn now_ms() -> u64 {
+    CLOCK.get().map(|c| c.elapsed().as_millis() as u64).unwrap_or(0)
+}
+
+fn emit_bar(state: &'static str) {
+    if let Some(app) = APP.get() {
+        #[derive(Clone, serde::Serialize)]
+        struct P {
+            state: &'static str,
+        }
+        let _ = app.emit_to(OVERLAY_LABEL, "whimpr://flowbar/state", P { state });
     }
 }
 
-// ── Text injection: clipbo - r - + Ctrl+V vi - `x - otool` ────────────────────────────
+/// The focused window's WM_CLASS (e.g. "firefox"), for per-app cleanup formatting —
+/// the Linux analogue of the macOS bundle id / Windows executable name.
+///
+/// Pragmatic choice: shells out to `xdotool` (already required for `paste_text`
+/// below) instead of hand-rolling `_NET_ACTIVE_WINDOW` + `WM_CLASS` X11
+/// atom/property queries — see the module doc comment for why. Best-effort: returns
+/// `None` on any failure (no `xdotool`, no active window, non-EWMH window manager,
+/// Wayland/XWayland oddities, ...) rather than erroring the pipeline.
+fn foreground_app() -> Option<String> {
+    let out = std::process::Command::new("xdotool")
+        .args(["getactivewindow", "getwindowclassname"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
 
-pub fn p - te_text(text: - tr) -> - ny - ow::Re - ult<()> {
-    u - e - rbo - r - ::Clipbo - r - let - ut cb = Clipbo - r - ::new()? - let - ve - = cb.get_text().ok() - cb. - et_text(text.to_ - tring())? -  - t - ::t - re - :: - leep(Dur - tion::fro - _ - illi - (60)) - // See t - e - o - ule - oc co - ent: `x - otool` c - o - en over wiring XTe - t - irectly. - tc -  - t - ::proce - ::Co - n - ::new("x - otool")
-        . - rg - (["key", "--cle - r - o - ifier - ", "ctrl+v"])
-        . - t - tu - ()
+// ── Text injection: clipboard + Ctrl+V via `xdotool` ────────────────────────────
+
+pub fn paste_text(text: &str) -> anyhow::Result<()> {
+    use arboard::Clipboard;
+    let mut cb = Clipboard::new()?;
+    let saved = cb.get_text().ok();
+    cb.set_text(text.to_string())?;
+    std::thread::sleep(Duration::from_millis(60));
+    // See the module doc comment: `xdotool` chosen over wiring XTest directly.
+    match std::process::Command::new("xdotool")
+        .args(["key", "--clearmodifiers", "ctrl+v"])
+        .status()
     {
-        Ok( - t - tu - ) if - t - tu - . - ucce - () => {}
-        Ok( - t - tu - ) => eprintln!("[w - i - pr:linux] x - otool exite - wit - { - t - tu - }"),
+        Ok(status) if status.success() => {}
+        Ok(status) => eprintln!("[whimpr:linux] xdotool exited with {status}"),
         Err(e) => eprintln!(
-            "[w - i - pr:linux] f - ile - to run x - otool ({e}) - in - t - ll it ( - pt in - t - ll x - otool / \ - nf in - t - ll x - otool / p - c - n -S x - otool) for p - te to work"
+            "[whimpr:linux] failed to run xdotool ({e}) — install it (apt install xdotool / \
+             dnf install xdotool / pacman -S xdotool) for paste to work"
         ),
-    } - t - ::t - re - :: - leep(Dur - tion::fro - _ - illi - (150)) - if let So - e(prev) = - ve - {
-        let _ = cb. - et_text(prev) - }
+    }
+    std::thread::sleep(Duration::from_millis(150));
+    if let Some(prev) = saved {
+        let _ = cb.set_text(prev);
+    }
     Ok(())
 }
 
-// ── Cle - nup ( - re - , cro - -pl - tfor - buil - ing block -  - copie - fro - `cr - te::win`) ─
+// ── Cleanup (shared, cross-platform building blocks — copied from `crate::win`) ─
 
-fn current_ - etting - _inner() -> w - i - pr_core::Setting - {
+fn current_settings_inner() -> whimpr_core::Settings {
     SETTINGS
         .get()
-        . - p(| - | - .lock().unwr - p_or_el - e(|e| e.into_inner()).clone())
-        .unwr - p_or_ - ef - ult()
+        .map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone())
+        .unwrap_or_default()
 }
 
-fn cle - n_tr - n - cript(r - w: - tr) -> String {
-    let - etting - = current_ - etting - _inner() - let level = - etting - .cle - nup_level - if - tc - e - !( - etting - .cle - nup_ - o - e, Cle - nupMo - e::R - w) || level.byp - e - _ll - () {
-        return r - w.to_ - tring() - }
-    let r - w_nor - = w - i - pr_core::cle - nup::pre_nor - lize_l - yout(r - w) - let r - w_out = w - i - pr_core::cle - nup::po - t_proce - ( - r - w_nor - ) - let voc - b = DICTIONARY
+fn clean_transcript(raw: &str) -> String {
+    let settings = current_settings_inner();
+    let level = settings.cleanup_level;
+    if matches!(settings.cleanup_mode, CleanupMode::Raw) || level.bypasses_llm() {
+        return raw.to_string();
+    }
+    let raw_norm = whimpr_core::cleanup::pre_normalize_layout(raw);
+    let raw_out = whimpr_core::cleanup::post_process(&raw_norm);
+    let vocab = DICTIONARY
         .get()
-        . - p(| - | - .lock().unwr - p_or_el - e(|e| e.into_inner()).prefilter( - r - w_nor - , 15))
-        .unwr - p_or_ - ef - ult() - let ctx = Cle - nupContext {
+        .map(|d| d.lock().unwrap_or_else(|e| e.into_inner()).prefilter(&raw_norm, 15))
+        .unwrap_or_default();
+    let ctx = CleanupContext {
         level,
-        voc - b, - pp_bun - le_i - : foregroun - _ - pp(), - tyle: - etting - . - tyle.to_in - truction - (),
-        ..Def - ult:: - ef - ult()
-    } - let run_loc - l = || -> Option< - ny - ow::Re - ult<String>> {
-        LOCAL.get(). - n - _t - en(| - | { - .lock().unwr - p_or_el - e(|e| e.into_inner()). - _ - ut(). - p(|w| {
-                let - e - ge - = w - i - pr_core::cle - nup::buil - _ - e - ge - ( - r - w_nor - , - ctx) - w.cle - nup( - e - ge - )
+        vocab,
+        app_bundle_id: foreground_app(),
+        ..Default::default()
+    };
+    let run_local = || -> Option<anyhow::Result<String>> {
+        LOCAL.get().and_then(|m| {
+            m.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(|w| {
+                let messages = whimpr_core::cleanup::build_messages(&raw_norm, &ctx);
+                w.cleanup(&messages)
             })
         })
-    } - let re - ult = - tc -  - etting - .cle - nup_ - o - e {
-        Cle - nupMo - e::OpenAi => OPENAI
+    };
+    let result = match settings.cleanup_mode {
+        CleanupMode::OpenAi => OPENAI
             .get()
-            . - n - _t - en(| - | - .lock().unwr - p_or_el - e(|e| e.into_inner()). - _ref(). - p(|p| p.cle - nup( - r - w_nor - , - ctx)))
-            .or_el - e(run_loc - l),
-        Cle - nupMo - e::Loc - l => run_loc - l(),
-        _ => run_loc - l(),
-    } -  - tc - re - ult {
-        So - e(Ok(cle - ne - )) => {
-            let cle - ne - = w - i - pr_core::cle - nup::po - t_proce - ( - cle - ne - ) - if w - i - pr_core::cle - nup::ev - lu - te_g - te - ( - r - w_out, - cle - ne - , level).p - e - () {
-                cle - ne - } el - e {
-                r - w_out
+            .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|p| p.cleanup(&raw_norm, &ctx)))
+            .or_else(run_local),
+        CleanupMode::Local => run_local(),
+        _ => run_local(),
+    };
+    match result {
+        Some(Ok(cleaned)) => {
+            let cleaned = whimpr_core::cleanup::post_process(&cleaned);
+            if whimpr_core::cleanup::evaluate_gates(&raw_out, &cleaned, level).passed() {
+                cleaned
+            } else {
+                raw_out
             }
         }
-        _ => r - w_out,
+        _ => raw_out,
     }
 }
 
-fn recor - _ - ict - tion(text: - tr, - ur - tion_ - ec - : f32, - pp: Option<String>) {
-    let wor - = w - i - pr_core:: - t - t - ::count_wor - (text) - if wor - == 0 {
-        return - }
-    if let So - e( - ) = STATS.get() {
-        let - ut - tore = - .lock().unwr - p_or_el - e(|e| e.into_inner()) - let - ur - tion_ - = ( - ur - tion_ - ec - . - x(0.0) * 1000.0) - u32 - let c - r - = text.c - r - ().count() - u32 -  - tore.recor - (wor - , - ur - tion_ - , c - r - , unix_now(), text.to_ - tring(), - pp) - let _ = - tore. - ve( - t - t - _p - t - ()) - }
+fn record_dictation(text: &str, duration_secs: f32, app: Option<String>) {
+    let words = whimpr_core::stats::count_words(text);
+    if words == 0 {
+        return;
+    }
+    if let Some(m) = STATS.get() {
+        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+        let duration_ms = (duration_secs.max(0.0) * 1000.0) as u32;
+        let chars = text.chars().count() as u32;
+        store.record(words, duration_ms, chars, unix_now(), text.to_string(), app);
+        let _ = store.save(&stats_path());
+    }
 }
 
-// ── T - e pu - -to-t - lk pipeline (copie - fro - `cr - te::win`) ────────────────────────
+// ── The push-to-talk pipeline (copied from `crate::win`) ────────────────────────
 
-fn on_ptt_ - own() {
-    if RECORDING. - w - p(true, Or - ering::SeqC - t) {
-        return - // - lre - y recor - ing
+fn on_ptt_down() {
+    if RECORDING.swap(true, Ordering::SeqCst) {
+        return; // already recording
     }
-    let _ = now_ - () - e - it_b - r("recor - ing") -  - t - ::t - re - :: - p - wn(|| - tc - w - i - pr_ - u - io:: - t - rt(|_: - [f32]| {}) {
-        Ok( - n - le) => {
-            *CAPTURE.get_or_init(|| Mutex::new(None)).lock().unwr - p_or_el - e(|e| e.into_inner()) = So - e( - n - le) - }
-        Err(e) => eprintln!("[w - i - pr:linux] - ic c - pture f - ile - : {e}"),
-    }) - }
+    let _ = now_ms();
+    emit_bar("recording");
+    std::thread::spawn(|| match whimpr_audio::start(|_: &[f32]| {}) {
+        Ok(handle) => {
+            *CAPTURE.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
+        }
+        Err(e) => eprintln!("[whimpr:linux] mic capture failed: {e}"),
+    });
+}
 
 fn on_ptt_up() {
-    if !RECORDING. - w - p(f - l - e, Or - ering::SeqC - t) {
-        return - // w - n't recor - ing
+    if !RECORDING.swap(false, Ordering::SeqCst) {
+        return; // wasn't recording
     }
-    e - it_b - r("i - le") - let - pp = foregroun - _ - pp() - let - n - le = CAPTURE.get(). - n - _t - en(| - lot| - lot.lock().unwr - p_or_el - e(|e| e.into_inner()).t - ke()) -  - t - ::t - re - :: - p - wn( - ove || {
-        let So - e(re - ) = - n - le. - n - _t - en(| - | - . - top()) el - e {
-            return - } - let So - e( - r) = ASR.get().clone - () el - e {
-            return - } - let pc - = w - i - pr_ - u - io::re - ple_to_16k( - re - . - ple - , re - . - ple_r - te) - let l - ngu - ge = current_ - etting - _inner().l - ngu - ge - if let Ok(t) = - r.tr - n - cribe( - pc - , l - ngu - ge. - _ - eref()) {
-            let r - w = t.text - // St - tic - nippet -  - re c - ecke - fir - t, on t - e r - w tr - n - cript, before
-            // cle - nup run - . A - tc - p - te - t - e exp - n - ion verb - ti -  - n -  - kip - t - e
-            // w - ole cle - nup pipeline (no LLM c - ll, no g - te - ).
-            let - nippet_exp - n - ion = SNIPPETS.get(). - n - _t - en(| - | { - .lock()
-                    .unwr - p_or_el - e(|e| e.into_inner())
-                    .fin - _ - tc - ( - r - w)
-                    . - p(|entry| entry.exp - n - ion.clone())
-            }) - let text = - tc -  - nippet_exp - n - ion {
-                So - e(exp - n - ion) => exp - n - ion,
-                None => cle - n_tr - n - cript( - r - w),
-            } - if !text.i - _e - pty() {
-                if let Err(e) = p - te_text( - text) {
-                    eprintln!("[w - i - pr:linux] p - te f - ile - : {e}") - }
-                recor - _ - ict - tion( - text, re - . - ur - tion_ - ec - (), - pp) - }
+    emit_bar("idle");
+    let app = foreground_app();
+    let handle = CAPTURE.get().and_then(|slot| slot.lock().unwrap_or_else(|e| e.into_inner()).take());
+    std::thread::spawn(move || {
+        let Some(res) = handle.and_then(|h| h.stop()) else {
+            return;
+        };
+        let Some(asr) = ASR.get().cloned() else {
+            return;
+        };
+        let pcm = whimpr_audio::resample_to_16k(&res.samples, res.sample_rate);
+        let language = current_settings_inner().language;
+        if let Ok(t) = asr.transcribe(&pcm, language.as_deref()) {
+            let text = clean_transcript(&t.text);
+            if !text.is_empty() {
+                if let Err(e) = paste_text(&text) {
+                    eprintln!("[whimpr:linux] paste failed: {e}");
+                }
+                record_dictation(&text, res.duration_secs(), app);
+            }
         }
-    }) - }
-
-// ── X11 glob - l - otkey gr - b (XGr - bKey -  - ee t - e - o - ule - oc co - ent) ─────────────
-
-/// Fin -  - keyco - e t - t - p - to t - e given key - y - by w - lking t - e - erver' - keybo - r - /// - pping t - ble. T - ere i - no `XKey - y - ToKeyco - e` in t - e - ync/xcb- - tyle protocol
-/// `x11rb` - pe - k - , - o t - i - replic - te - it vi - `GetKeybo - r - M - pping`.
-///
-/// UNVERIFIED - g - in - t t - e ex - ct `x11rb` ver - ion t - i - project pin - : - ouble-c - eck
-/// `GetKeybo - r - M - ppingReply`' - fiel - n - e - / - pe if t - i -  - oe - n't co - pile - -i - .
-fn keyco - e_for_key - y - <C: Connection>(conn: - C, t - rget: u32) -> Option<u8> {
-    let - etup = conn. - etup() - let - in_kc = - etup. - in_keyco - e - let - x_kc = - etup. - x_keyco - e - let count = ( - x_kc - u16). - tur - ting_ - ub( - in_kc - u16). - tur - ting_ - (1) - u8 - let - pping = conn.get_keybo - r - _ - pping( - in_kc, count).ok()?.reply().ok()? - let per = - pping.key - y - _per_keyco - e - u - ize - if per == 0 {
-        return None - } - pping
-        .key - y - .c - unk - (per)
-        .po - ition(|c - unk| c - unk.iter(). - ny(| - k - | k - == t - rget))
-        . - p(|i| - in_kc.wr - pping_ - (i - u8))
+    });
 }
 
-/// Connect to t - e X - erver, gr - b Rig - t Ctrl glob - lly (`AnyMo - ifier`, - o it fire - /// reg - r - le - of w - t ot - er - o - ifier -  - ppen to be - el - ), - n - block - elivering
-/// KeyPre - /KeyRele - e for it into t - e pu - -to-t - lk pipeline. Run - on it - own t - re - /// for t - e lifeti - e of t - e proce - , - irroring `cr - te::win:: - p - wn_ - ook_t - re - `' - /// - e - ic - te -  - e - ge-pu - p t - re - .
-fn run_ - otkey_loop() -> - ny - ow::Re - ult<()> {
-    let (conn, - creen_nu - ) = x11rb::connect(None)? - let root = conn. - etup().root - [ - creen_nu - ].root - let keyco - e = keyco - e_for_key - y - ( - conn, XK_CONTROL_R)
-        .ok_or_el - e(|| - ny - ow:: - ny - ow!("no keyco - e - p - to XK_Control_R (Rig - t Ctrl) on t - i - keybo - r - l - yout"))? - // NOTE: unverifie -  - g - in - t t - e ex - ct x11rb ver - ion pinne -  - ere - if ` - o - ifier - `
-    // or `pointer_ - o - e`/`keybo - r - _ - o - e` - on't - ccept `Mo - M - k::ANY` / `Gr - bMo - e::ASYNC`
-    // - irectly, - ju - t to w - tever t - i - cr - te ver - ion' - gr - b_key - ign - ture expect - .
-    conn.gr - b_key(true, root, Mo - M - k::ANY, keyco - e, Gr - bMo - e::ASYNC, Gr - bMo - e::ASYNC)?
-        .c - eck()? - conn.flu - ()? - eprintln!("[w - i - pr:linux] X11 key gr - b in - t - lle - (pu - -to-t - lk: Rig - t Ctrl, X11 only -  - ee linux.r -  - oc co - ent for W - yl - n - )") - loop { - tc - conn.w - it_for_event()? {
-            Event::KeyPre - (ev) if ev. - et - il == keyco - e => on_ptt_ - own(),
-            Event::KeyRele - e(ev) if ev. - et - il == keyco - e => on_ptt_up(),
+// ── X11 global hotkey grab (XGrabKey — see the module doc comment) ─────────────
+
+/// Find a keycode that maps to the given keysym by walking the server's keyboard
+/// mapping table. There is no `XKeysymToKeycode` in the async/xcb-style protocol
+/// `x11rb` speaks, so this replicates it via `GetKeyboardMapping`.
+///
+/// UNVERIFIED against the exact `x11rb` version this project pins: double-check
+/// `GetKeyboardMappingReply`'s field names/shape if this doesn't compile as-is.
+fn keycode_for_keysym<C: Connection>(conn: &C, target: u32) -> Option<u8> {
+    let setup = conn.setup();
+    let min_kc = setup.min_keycode;
+    let max_kc = setup.max_keycode;
+    let count = (max_kc as u16).saturating_sub(min_kc as u16).saturating_add(1) as u8;
+    let mapping = conn.get_keyboard_mapping(min_kc, count).ok()?.reply().ok()?;
+    let per = mapping.keysyms_per_keycode as usize;
+    if per == 0 {
+        return None;
+    }
+    mapping
+        .keysyms
+        .chunks(per)
+        .position(|chunk| chunk.iter().any(|&ks| ks == target))
+        .map(|i| min_kc.wrapping_add(i as u8))
+}
+
+/// Connect to the X server, grab Right Ctrl globally (`AnyModifier`, so it fires
+/// regardless of what other modifiers happen to be held), and block delivering
+/// KeyPress/KeyRelease for it into the push-to-talk pipeline. Runs on its own thread
+/// for the lifetime of the process, mirroring `crate::win::spawn_hook_thread`'s
+/// dedicated message-pump thread.
+fn run_hotkey_loop() -> anyhow::Result<()> {
+    let (conn, screen_num) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen_num].root;
+
+    let keycode = keycode_for_keysym(&conn, XK_CONTROL_R)
+        .ok_or_else(|| anyhow::anyhow!("no keycode maps to XK_Control_R (Right Ctrl) on this keyboard layout"))?;
+
+    // NOTE: unverified against the exact x11rb version pinned here — if `modifiers`
+    // or `pointer_mode`/`keyboard_mode` don't accept `ModMask::ANY` / `GrabMode::ASYNC`
+    // directly, adjust to whatever this crate version's grab_key signature expects.
+    conn.grab_key(true, root, ModMask::ANY, keycode, GrabMode::ASYNC, GrabMode::ASYNC)?
+        .check()?;
+    conn.flush()?;
+    eprintln!("[whimpr:linux] X11 key grab installed (push-to-talk: Right Ctrl, X11 only — see linux.rs doc comment for Wayland)");
+
+    loop {
+        match conn.wait_for_event()? {
+            Event::KeyPress(ev) if ev.detail == keycode => on_ptt_down(),
+            Event::KeyRelease(ev) if ev.detail == keycode => on_ptt_up(),
             _ => {}
         }
     }
 }
 
-fn - p - wn_ - otkey_t - re - () { - t - ::t - re - :: - p - wn(|| {
-        if let Err(e) = run_ - otkey_loop() {
+fn spawn_hotkey_thread() {
+    std::thread::spawn(|| {
+        if let Err(e) = run_hotkey_loop() {
             eprintln!(
-                "[w - i - pr:linux] X11 - otkey gr - b f - ile - : {e} - i -  -  - i - pl - y - erver re - c - ble? \
-                 T - i -  - o - ule only - upport - X11 (or XW - yl - n - ) - W - yl - n - co - po - itor - ' n - tive \
-                 protocol i - not - upporte - yet ( - ee t - e - o - ule - oc co - ent)."
-            ) - }
-    }) - }
+                "[whimpr:linux] X11 hotkey grab failed: {e} — is a display server reachable? \
+                 This module only supports X11 (or XWayland); Wayland compositors' native \
+                 protocol is not supported yet (see the module doc comment)."
+            );
+        }
+    });
+}
 
-// ── Public - urf - ce ( - irror - cr - te::win' - , w - ic - t - e T - uri co - n - c - ll) ───────
+// ── Public surface (mirrors crate::win's, which the Tauri commands call) ───────
 
-pub fn in - t - ll( - pp: AppH - n - le) {
-    let _ = APP. - et( - pp) - let _ = CLOCK. - et(In - t - nt::now()) - let - etting - = w - i - pr_core::Setting - ::lo - ( - etting - _p - t - ()) - let l - ngu - ge_for_ - o - el = - etting - .l - ngu - ge.clone() - let _ = SETTINGS. - et(Mutex::new( - etting - )) - let _ = DICTIONARY. - et(Mutex::new(w - i - pr_core::Diction - ryStore::lo - ( - ict_p - t - ()))) - let _ = SNIPPETS. - et(Mutex::new(w - i - pr_core::SnippetStore::lo - ( - nippet - _p - t - ()))) - let _ = STATS. - et(Mutex::new(w - i - pr_core::St - t - Store::lo - ( - t - t - _p - t - ()))) - let _ = OPENAI. - et(Mutex::new(None)) - let _ = LOCAL. - et(Mutex::new(None)) - rebuil - _provi - er - () - // Lo - W - i - per. - t - ::t - re - :: - p - wn( - ove || { - tc - w - i - pr_ - r::W - i - perEngine::lo - ( - w - i - per_ - o - el_p - t - (l - ngu - ge_for_ - o - el. - _ - eref())) {
+pub fn install(app: AppHandle) {
+    let _ = APP.set(app);
+    let _ = CLOCK.set(Instant::now());
+    let settings = whimpr_core::Settings::load(&settings_path());
+    let language_for_model = settings.language.clone();
+    let _ = SETTINGS.set(Mutex::new(settings));
+    let _ = DICTIONARY.set(Mutex::new(whimpr_core::DictionaryStore::load(&dict_path())));
+    let _ = STATS.set(Mutex::new(whimpr_core::StatsStore::load(&stats_path())));
+    let _ = OPENAI.set(Mutex::new(None));
+    let _ = LOCAL.set(Mutex::new(None));
+    rebuild_providers();
+
+    // Load Whisper.
+    std::thread::spawn(move || {
+        match whimpr_asr::WhisperEngine::load(&whisper_model_path(language_for_model.as_deref())) {
             Ok(engine) => {
-                let _ = ASR. - et(Arc::new(engine)) - eprintln!("[w - i - pr:linux] ASR re - y") - }
-            Err(e) => eprintln!("[w - i - pr:linux] ASR lo - f - ile - : {e}"),
+                let _ = ASR.set(Arc::new(engine));
+                eprintln!("[whimpr:linux] ASR ready");
+            }
+            Err(e) => eprintln!("[whimpr:linux] ASR load failed: {e}"),
         }
-    }) - // St - rt t - e loc - l cle - nup worker. - t - ::t - re - :: - p - wn(|| {
-        if let So - e(w) = cr - te::loc - l_ll - :: - p - wn_ - ef - ult() {
-            if let So - e( - lot) = LOCAL.get() {
-                * - lot.lock().unwr - p_or_el - e(|e| e.into_inner()) = So - e(w) - }
+    });
+    // Start the local cleanup worker.
+    std::thread::spawn(|| {
+        if let Some(w) = crate::local_llm::spawn_default() {
+            if let Some(slot) = LOCAL.get() {
+                *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(w);
+            }
         }
-    }) -  - p - wn_ - otkey_t - re - () - eprintln!("[w - i - pr:linux] in - t - lling X11 pu - -to-t - lk gr - b (Rig - t Ctrl)") - }
+    });
 
-pub fn current_ - etting - () -> w - i - pr_core::Setting - {
-    current_ - etting - _inner()
+    spawn_hotkey_thread();
+    eprintln!("[whimpr:linux] installing X11 push-to-talk grab (Right Ctrl)");
 }
 
-pub fn up - te_ - etting - (new: w - i - pr_core::Setting - ) {
-    if let So - e( - ) = SETTINGS.get() {
-        * - .lock().unwr - p_or_el - e(|e| e.into_inner()) = new.clone() - }
-    let _ = new. - ve( - etting - _p - t - ()) - rebuil - _provi - er - () - }
+pub fn current_settings() -> whimpr_core::Settings {
+    current_settings_inner()
+}
 
-pub fn rebuil - _provi - er - () {
-    let - etting - = current_ - etting - _inner() - let - o - el = - etting - .open - i_ - o - el - let b - e_url = - etting - .open - i_b - e_url - let key = keyring::Entry::new("co - .w - i - pr.w - i - prflow", "open - i_ - pi_key")
+pub fn update_settings(new: whimpr_core::Settings) {
+    if let Some(m) = SETTINGS.get() {
+        *m.lock().unwrap_or_else(|e| e.into_inner()) = new.clone();
+    }
+    let _ = new.save(&settings_path());
+    rebuild_providers();
+}
+
+pub fn rebuild_providers() {
+    let settings = current_settings_inner();
+    let model = settings.openai_model;
+    let base_url = settings.openai_base_url;
+    let key = keyring::Entry::new("com.whimpr.whimprflow", "openai_api_key")
         .ok()
-        . - n - _t - en(|e| e.get_p - wor - ().ok())
-        .filter(|k| !k.tri - ().i - _e - pty()) - if let So - e( - lot) = OPENAI.get() {
-        * - lot.lock().unwr - p_or_el - e(|e| e.into_inner()) = key. - p(|k| {
-            w - i - pr_cle - nup::OpenAiProvi - er::wit - _b - e_url(k, - o - el, So - e(b - e_url))
-        }) - }
+        .and_then(|e| e.get_password().ok())
+        .filter(|k| !k.trim().is_empty());
+    if let Some(slot) = OPENAI.get() {
+        *slot.lock().unwrap_or_else(|e| e.into_inner()) = key.map(|k| {
+            whimpr_cleanup::OpenAiProvider::with_base_url(k, model, Some(base_url))
+        });
+    }
 }
 
-pub fn - t - t - _ - u - ry(tz_off - et_ - inute - : i32) -> St - t - Su - ry {
+pub fn stats_summary(tz_offset_minutes: i32) -> StatsSummary {
     STATS
         .get()
-        . - p(| - | - .lock().unwr - p_or_el - e(|e| e.into_inner()). - u - ry(tz_off - et_ - inute - , unix_now()))
-        .unwr - p_or_el - e(|| w - i - pr_core::St - t - Store:: - ef - ult(). - u - ry(tz_off - et_ - inute - , unix_now()))
+        .map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).summary(tz_offset_minutes, unix_now()))
+        .unwrap_or_else(|| whimpr_core::StatsStore::default().summary(tz_offset_minutes, unix_now()))
 }
 
-pub fn - i - tory(li - it: u - ize) -> Vec<w - i - pr_core::Hi - toryIte - > {
-    STATS.get(). - p(| - | - .lock().unwr - p_or_el - e(|e| e.into_inner()). - i - tory(li - it)).unwr - p_or_ - ef - ult()
+pub fn history(limit: usize) -> Vec<whimpr_core::HistoryItem> {
+    STATS.get().map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).history(limit)).unwrap_or_default()
 }
 
-pub fn - iction - ry_entrie - () -> Vec<cr - te:: - otkey::DictEntryDto> {
+pub fn dictionary_entries() -> Vec<crate::hotkey::DictEntryDto> {
     DICTIONARY
         .get()
-        . - p(| - | { - .lock()
-                .unwr - p_or_el - e(|e| e.into_inner())
-                .entrie - .iter()
-                . - p(|e| cr - te:: - otkey::DictEntryDto {
-                    correct: e.correct.clone(), - i - e - r - : e. - i - e - r - .clone(), - uto: - tc - e - !(e. - ource, w - i - pr_core::DictSource::Auto),
+        .map(|m| {
+            m.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .entries
+                .iter()
+                .map(|e| crate::hotkey::DictEntryDto {
+                    correct: e.correct.clone(),
+                    mishears: e.mishears.clone(),
+                    auto: matches!(e.source, whimpr_core::DictSource::Auto),
                 })
                 .collect()
         })
-        .unwr - p_or_ - ef - ult()
+        .unwrap_or_default()
 }
 
-pub fn - iction - ry_ - (correct: String, - i - e - r - : Vec<String>) {
-    if let So - e( - ) = DICTIONARY.get() {
-        let - ut - tore = - .lock().unwr - p_or_el - e(|e| e.into_inner()) -  - tore. - (correct, - i - e - r - , w - i - pr_core::DictSource::M - nu - l) - let _ = - tore. - ve( - ict_p - t - ()) - }
-}
-
-pub fn - iction - ry_re - ove(correct: - tr) {
-    if let So - e( - ) = DICTIONARY.get() {
-        let - ut - tore = - .lock().unwr - p_or_el - e(|e| e.into_inner()) - if - tore.re - ove(correct) {
-            let _ = - tore. - ve( - ict_p - t - ()) - }
+pub fn dictionary_add(correct: String, mishears: Vec<String>) {
+    if let Some(m) = DICTIONARY.get() {
+        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+        store.add(correct, mishears, whimpr_core::DictSource::Manual);
+        let _ = store.save(&dict_path());
     }
 }
 
-pub fn - iction - ry_le - rn(correct: String, - i - e - r - : Vec<String>) {
-    if let So - e( - ) = DICTIONARY.get() {
-        let - ut - tore = - .lock().unwr - p_or_el - e(|e| e.into_inner()) -  - tore. - (correct, - i - e - r - , w - i - pr_core::DictSource::Auto) - let _ = - tore. - ve( - ict_p - t - ()) - }
-}
-
-pub fn - nippet_entrie - () -> Vec<w - i - pr_core::SnippetEntry> {
-    SNIPPETS
-        .get()
-        . - p(| - | - .lock().unwr - p_or_el - e(|e| e.into_inner()).entrie - .clone())
-        .unwr - p_or_ - ef - ult()
-}
-
-pub fn - nippet_ - (trigger: String, exp - n - ion: String) {
-    if let So - e( - ) = SNIPPETS.get() {
-        let - ut - tore = - .lock().unwr - p_or_el - e(|e| e.into_inner()) -  - tore. - (trigger, exp - n - ion) - let _ = - tore. - ve( - nippet - _p - t - ()) - }
-}
-
-pub fn - nippet_re - ove(trigger: - tr) {
-    if let So - e( - ) = SNIPPETS.get() {
-        let - ut - tore = - .lock().unwr - p_or_el - e(|e| e.into_inner()) - if - tore.re - ove(trigger) {
-            let _ = - tore. - ve( - nippet - _p - t - ()) - }
+pub fn dictionary_remove(correct: &str) {
+    if let Some(m) = DICTIONARY.get() {
+        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+        if store.remove(correct) {
+            let _ = store.save(&dict_path());
+        }
     }
 }
 
-// ── H - n - -free lock / c - ncel co - n - ───────────────────────────────────────────
-//
-// Stub - only: out of - cope for t - i - p - (w - ic -  - e - t - e re - l - ouble-t - p-lock
-// to `win.r - ` - n -  - re - l E - c - pe - ook + t - e - e co - n - to - cOS' - ` - otkey.r - `).
-// T - i - X11 l - yer - till u - e - t - e pl - in RECORDING-boole - n toggle wit - no lock
-// concept - t - ll ( - ee t - e - o - ule - oc co - ent), - o t - ere i - not - ing for t - e - e to
-// - rive yet. Kept - no-op - purely - o ` - otkey.r - `' - per-pl - tfor - re-export li - t
-// - t - y - unifor -  - cro -  - ll t - ree OSe - .
-pub fn confir - _ - ict - tion() {}
-pub fn c - ncel_ - ict - tion() {}
+pub fn dictionary_learn(correct: String, mishears: Vec<String>) {
+    if let Some(m) = DICTIONARY.get() {
+        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+        store.add(correct, mishears, whimpr_core::DictSource::Auto);
+        let _ = store.save(&dict_path());
+    }
+}
