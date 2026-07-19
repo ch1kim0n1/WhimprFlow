@@ -849,7 +849,7 @@ mod imp {
         let settings = current_settings();
         let run_local = |_selection: &str, _instruction: &str| -> anyhow::Result<String> {
             anyhow::bail!(
-                "local Command Mode is unavailable in this build — set Cleanup Engine to OpenAI                  or Anthropic (Settings) to use Transforms / Command Mode"
+                "local Command Mode is unavailable in this build. Set Cleanup Engine to OpenAI                  or Anthropic in Settings to use Transforms or Command Mode"
             )
         };
         match settings.cleanup_mode {

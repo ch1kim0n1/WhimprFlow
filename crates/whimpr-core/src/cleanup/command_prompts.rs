@@ -107,7 +107,7 @@ pub fn build_command_messages(
     if word_count > MAX_SELECTION_WORDS {
         anyhow::bail!(
             "selection is {word_count} words, which exceeds the {MAX_SELECTION_WORDS}-word \
-             Command Mode limit — select a smaller range and try again"
+             Command Mode limit. Select a smaller range and try again"
         );
     }
     let mut msgs = Vec::with_capacity(COMMAND_FEW_SHOT.len() * 2 + 2);

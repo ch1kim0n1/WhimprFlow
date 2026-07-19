@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320" role="img" aria-labelledby="title desc">
+  <title id="title">WhimprFlow logo</title>
+  <desc id="desc">Aqua flowing signal mark with a deep-slate WhimprFlow wordmark.</desc>
+  <image href="whimprflow-mark-transparent.png" x="0" y="0" width="320" height="320" preserveAspectRatio="xMidYMid meet"/>
+  <text x="350" y="198" fill="#111419" font-family="Avenir Next, Avenir, sans-serif" font-size="142" font-weight="600" letter-spacing="-6">Whimpr<tspan fill="#12A99D">Flow</tspan></text>
+</svg>

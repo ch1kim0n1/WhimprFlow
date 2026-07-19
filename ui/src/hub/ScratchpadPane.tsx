@@ -86,7 +86,7 @@ export function ScratchpadPane() {
 
   return (
     <div style={{ maxWidth: 820 }}>
-      <PageTitle sub="A quiet place to dictate long-form and shape it before it goes anywhere. Focus the box, hold Fn, and speak; your words land here. Everything is saved locally and stays on this machine.">
+      <PageTitle sub="A space for long-form dictation. Focus the editor, hold Fn, and speak. Everything is saved locally on this machine.">
         Scratchpad
       </PageTitle>
 

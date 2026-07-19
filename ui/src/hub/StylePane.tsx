@@ -34,7 +34,7 @@ export function StylePane({ settings, onChange }: { settings: Settings; onChange
           Style note (optional)
         </div>
         <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 10 }}>
-          A free-text nudge layered on top of the formality above.
+          An optional instruction applied on top of the formality above.
         </div>
         <textarea
           value={style.custom_instructions}

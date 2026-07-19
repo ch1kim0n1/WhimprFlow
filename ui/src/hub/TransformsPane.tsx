@@ -99,7 +99,7 @@ export function TransformsPane() {
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <PageTitle sub="Turn a rough thought into a finished output (an email, a summary, a to-do) in one click. Type below, or focus the box, hold Fn and speak to dictate straight in.">
+      <PageTitle sub="Turn dictated or pasted text into a finished draft: an email, a summary, or a to-do. Type below, or focus the field and hold Fn to dictate.">
         Transforms
       </PageTitle>
 

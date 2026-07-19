@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { font } from "../tokens/values";
 import { theme } from "./theme";
 import { Onboarding } from "./Onboarding";
@@ -13,6 +13,7 @@ import { ScratchpadPane } from "./ScratchpadPane";
 import { ShortcutsPane } from "./ShortcutsPane";
 import { SettingsPane } from "./SettingsPane";
 import { Help } from "./Help";
+import { gsap, prefersReduced, EASE } from "./anim";
 import {
   getSettings,
   setSettings,
@@ -21,6 +22,30 @@ import {
   type Status,
   DEFAULT_SETTINGS,
 } from "./api";
+
+// Wraps the routed pane. Remounted per navigation (key={page}), so each page
+// arrival plays a GSAP enter-cascade: the pane's own sections stagger up. Home
+// runs its own richer timeline, so it opts out here.
+function RoutedPage({ page, children }: { page: Page; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (page === "home" || prefersReduced() || document.hidden || !ref.current) return;
+    const ctx = gsap.context(() => {
+      const root = ref.current?.firstElementChild;
+      const targets = root && root.children.length > 1 ? root.children : ref.current?.children;
+      gsap.from(targets as Element[] | HTMLCollection, {
+        opacity: 0,
+        y: 22,
+        duration: 0.6,
+        ease: EASE,
+        stagger: 0.07,
+        clearProps: "transform,opacity",
+      });
+    }, ref);
+    return () => ctx.revert();
+  }, [page]);
+  return <div ref={ref}>{children}</div>;
+}
 
 export function App() {
   const [page, setPage] = useState<Page>("home");
@@ -64,18 +89,20 @@ export function App() {
       <Sidebar page={page} setPage={setPage} />
       <main style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
         <div style={{ padding: "36px 44px", margin: "0 auto", maxWidth: 1120 }}>
-          {page === "home" && <Home />}
-          {page === "insights" && <Insights />}
-          {page === "dictionary" && <DictionaryPane />}
-          {page === "snippets" && <SnippetsPane />}
-          {page === "style" && <StylePane settings={settings} onChange={update} />}
-          {page === "transforms" && <TransformsPane />}
-          {page === "scratchpad" && <ScratchpadPane />}
-          {page === "shortcuts" && <ShortcutsPane settings={settings} onChange={update} />}
-          {page === "settings" && (
-            <SettingsPane settings={settings} onChange={update} status={status} refresh={refresh} />
-          )}
-          {page === "help" && <Help />}
+          <RoutedPage key={page} page={page}>
+            {page === "home" && <Home />}
+            {page === "insights" && <Insights />}
+            {page === "dictionary" && <DictionaryPane />}
+            {page === "snippets" && <SnippetsPane />}
+            {page === "style" && <StylePane settings={settings} onChange={update} />}
+            {page === "transforms" && <TransformsPane />}
+            {page === "scratchpad" && <ScratchpadPane />}
+            {page === "shortcuts" && <ShortcutsPane settings={settings} onChange={update} />}
+            {page === "settings" && (
+              <SettingsPane settings={settings} onChange={update} status={status} refresh={refresh} />
+            )}
+            {page === "help" && <Help />}
+          </RoutedPage>
         </div>
       </main>
     </div>

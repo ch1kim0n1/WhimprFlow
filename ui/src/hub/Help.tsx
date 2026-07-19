@@ -12,7 +12,7 @@ const TIPS: { icon: IconName; title: string; body: string }[] = [
   {
     icon: "sparkles",
     title: "Cleanup happens where your cursor is",
-    body: "Release the key and your cleaned-up text is typed straight into whatever app has focus - email, chat, notes, code. Choose how aggressive the cleanup is under Settings > Auto Cleanup.",
+    body: "Release the key and your cleaned-up text is typed into the active app: email, chat, notes, or code. Set the cleanup strength under Settings > Auto Cleanup.",
   },
   {
     icon: "book",
