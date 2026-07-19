@@ -453,8 +453,7 @@ fn finish_capture_and_paste(app: Option<String>) {
             return;
         };
         let pcm = whimpr_audio::resample_to_16k(&res.samples, res.sample_rate);
-        let language = current_settings_inner().language;
-        if let Ok(t) = asr.transcribe(&pcm, language.as_deref()) {
+        if let Ok(t) = asr.transcribe(&pcm) {
             let raw = t.text;
             // Static snippets are checked first, on the raw transcript, before
             // cleanup runs. A match pastes the expansion verbatim and skips the
@@ -534,8 +533,10 @@ fn latest_transcript() -> Option<String> {
     STATS.get().and_then(|m| {
         m.lock()
             .unwrap_or_else(|e| e.into_inner())
-            .latest()
-            .map(|r| r.text.clone())
+            .history(1)
+            .into_iter()
+            .next()
+            .map(|r| r.text)
     })
 }
 

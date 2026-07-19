@@ -1,6 +1,6 @@
 # WhimprFlow CI
 #
-# Rust workspace matrix (macOS, Windows, best-effort Ubuntu) + the ui/ frontend.
+# Rust workspace matrix for supported desktop platforms plus the ui/ frontend.
 # See perfect-todo.md's "Cross-cutting: what 'elite' also requires" section for why
 # this exists: it's the highest-leverage non-feature investment in the repo.
 name: CI
@@ -16,19 +16,10 @@ jobs:
   rust:
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Only Ubuntu is allowed to fail — Linux support is brand new / unverified
-    # elsewhere in this change (see perfect-todo.md item #10). macOS and Windows
-    # are both verified-working platforms (see README's platform-status table)
-    # and must stay green.
-    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-latest
-          - os: windows-latest
-          - os: ubuntu-latest
-            experimental: true
+        os: [macos-latest, windows-latest]
 
     steps:
       - name: Checkout
@@ -49,35 +40,6 @@ jobs:
           key: cargo-${{ matrix.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-${{ matrix.os }}-
-
-      # --- Linux only: Tauri's webview/tray deps, cpal's ALSA backend,
-      # bindgen's libclang, and src-tauri/src/linux.rs's X11 hotkey/paste glue
-      # (X11 headers + the `xdotool` runtime binary it shells out to). Linux
-      # support is brand new/unverified (see linux.rs's own doc comment), so
-      # this is best-effort — the job has continue-on-error above. ---
-      - name: Install Linux system dependencies
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential curl wget file pkg-config cmake ninja-build \
-            clang libclang-dev libasound2-dev libssl-dev \
-            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            librsvg2-dev libxdo-dev \
-            libx11-dev libxcb1-dev xdotool
-
-      # --- Windows & Linux only: whimpr-llm-worker's llama-cpp-2 "vulkan"
-      # feature (crates/whimpr-llm-worker/Cargo.toml) needs the Vulkan SDK's
-      # glslc to compile shaders at build time. macOS uses the "metal" feature
-      # instead, so it needs nothing extra here. ---
-      - name: Install Vulkan SDK
-        if: matrix.os == 'windows-latest' || matrix.os == 'ubuntu-latest'
-        uses: jakoch/install-vulkan-sdk-action@v1
-        with:
-          vulkan_version: 1.3.290.0
-          install_runtime: true
-          cache: true
-          stripdown: true
 
       # --- Windows only: bindgen (used by whisper-rs / llama-cpp-sys-2) needs
       # libclang; point it at the LLVM install GitHub's windows-latest runner
@@ -110,24 +72,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ui/ is a pnpm project (see ui/pnpm-lock.yaml + README's build steps),
-      # not npm — pnpm is used here to match, with the equivalent caching.
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
-          cache-dependency-path: ui/pnpm-lock.yaml
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
 
       - name: Install dependencies
         working-directory: ui
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Build (tsc --noEmit && vite build)
         working-directory: ui
-        run: pnpm run build
+        run: npm run build

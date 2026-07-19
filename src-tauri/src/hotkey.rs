@@ -1117,8 +1117,8 @@ pub use imp::{
 // Windows uses the real (but unverified) platform layer in `crate::win`.
 #[cfg(target_os = "windows")]
 pub use crate::win::{
-    cancel_dictation, confirm_dictation, current_settings, dictionary_add, dictionary_entries,
-    dictionary_learn, dictionary_remove, history, install, rebuild_providers, snippet_add,
+    backup_data, cancel_dictation, confirm_dictation, current_settings, dictionary_add,
+    dictionary_entries, dictionary_remove, history, install, rebuild_providers, snippet_add,
     snippet_entries, snippet_remove, stats_summary, update_settings,
 };
 

@@ -31,20 +31,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
-          cache-dependency-path: ui/pnpm-lock.yaml
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install frontend dependencies
         working-directory: ui
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       # Drafts make every tagged build reviewable before a human publishes it.
       # Signing and notarization credentials can be added as repository secrets later.
@@ -54,7 +49,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: ui
-          tauriScript: pnpm tauri
+          tauriScript: npm exec tauri
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: WhimprFlow ${{ inputs.tag || github.ref_name }}
           releaseDraft: true
