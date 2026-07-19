@@ -61,7 +61,7 @@
 - **OBSERVED:** Architecturally a **file batch transcriber** (queue 20 files, Neural Engine, sequential). Its dictation mode: *"**2.4 seconds of silence** after you speak before any text appears, **no real-time streaming**, and text drops **all at once** rather than flowing as you speak."* Explicit confirmation that a shipping Mac dictation app does **all-at-once insertion**, no streaming.
 
 ### FluidAudio (github.com/FluidInference/FluidAudio)  -  the streaming option IF WhimprFlow wants true streaming
-- **OBSERVED:** Ships **both** backends  - 
+- **OBSERVED:** Ships **both** backends  -
   - **Batch:** `Parakeet TDT v3 (0.6B)` CoreML, multilingual (25 EU langs + JA/ZH). This is the fast batch path (aligns with your "~1 min audio in ~0.5s" fact).
   - **Streaming:** `Parakeet EOU (120M)` CoreML  -  **true real-time streaming ASR with end-of-utterance detection, English-only.** API: **`StreamingEouAsrManager`** with `loadModels()`, `process(audioBuffer:)`, `finish()`, `reset()`; callbacks **`setEouCallback`** (EOU) + **`partialCallback`** (partial results, carrying text/isFinal/confidence/eouDetected/segmentIndex).
   - **Chunk sizes:** **160 ms** (lowest latency), **320 ms** (balanced, recommended default), **1600 ms** (highest throughput). `eouDebounceMs` default **1280 ms** silence before EOU fires.

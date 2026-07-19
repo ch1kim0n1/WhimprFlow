@@ -92,8 +92,8 @@ pub trait CleanupProvider: Send + Sync {
 
     /// **Command Mode**: rewrite `selection` per the spoken `instruction` (see
     /// [`command_prompts::build_command_messages`]) rather than clean up a
-    /// transcript. This is a distinct, intentional-rewrite prompt path — not a
-    /// variant of [`cleanup`](Self::cleanup) — so it gets its own trait method
+    /// transcript. This is a distinct, intentional-rewrite prompt path  -  not a
+    /// variant of [`cleanup`](Self::cleanup)  -  so it gets its own trait method
     /// rather than overloading `cleanup`'s conservative contract.
     ///
     /// Default: unsupported. Cloud providers (`whimpr-cleanup`) implement this
@@ -124,8 +124,8 @@ pub fn wrap_transcript(raw: &str) -> String {
 /// Build the full ordered message list for a cleanup request: the system prompt,
 /// the few-shot demonstration turns (so small models actually produce newlines,
 /// lists, paragraph breaks, and resolved self-corrections instead of just being
-/// *told* to), then the real transcript with its vocab/context. Every provider —
-/// local worker, OpenAI, Anthropic — sends this identical sequence.
+/// *told* to), then the real transcript with its vocab/context. Every provider  -
+/// local worker, OpenAI, Anthropic  -  sends this identical sequence.
 pub fn build_messages(raw: &str, ctx: &CleanupContext) -> Vec<CleanupMsg> {
     let mut msgs = Vec::with_capacity(prompts::FEW_SHOT.len() * 2 + 2);
     let mut system = prompts::system_for(ctx.level, ctx.app_bundle_id.as_deref());
@@ -133,7 +133,7 @@ pub fn build_messages(raw: &str, ctx: &CleanupContext) -> Vec<CleanupMsg> {
         let style = style.trim();
         if !style.is_empty() {
             system.push_str(
-                "\n\n# Personal Style (presentation only — never invent facts, greetings, or \
+                "\n\n# Personal Style (presentation only  -  never invent facts, greetings, or \
                  sign-offs)\n",
             );
             system.push_str(style);
@@ -188,7 +188,7 @@ pub fn assemble_user_message(raw: &str, ctx: &CleanupContext) -> String {
 /// any LEFTOVER spoken layout cue the model failed to translate ("new line", "new
 /// paragraph", "line break", "next line") into a real line break, and collapses
 /// runaway blank lines. It deliberately never touches punctuation-name words or
-/// self-correction cues ("actually", "scratch that") — those are context-sensitive
+/// self-correction cues ("actually", "scratch that")  -  those are context-sensitive
 /// and stay the model's job (a bare-regex would misfire on "I actually liked it").
 pub fn post_process(text: &str) -> String {
     let stripped = strip_code_fence(text);
@@ -232,7 +232,7 @@ const LAYOUT_CUES_POST: &[(&str, &str)] = &[
 /// Pre-cleanup normalization: turn explicit spoken layout cues ("new line", "new
 /// paragraph", ...) into break sentinels in the RAW transcript *before* it reaches
 /// the model, so the user's requested breaks are guaranteed to survive. Correction
-/// cues are intentionally excluded — they stay the model's context-sensitive job.
+/// cues are intentionally excluded  -  they stay the model's context-sensitive job.
 pub fn pre_normalize_layout(raw: &str) -> String {
     replace_cues(raw, LAYOUT_CUES_PRE)
 }

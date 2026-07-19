@@ -1,6 +1,6 @@
 //! Static text snippets: voice-triggered phrase expansion. Say a trigger phrase
 //! (either as the whole utterance or as a standalone phrase within it) and it
-//! expands to canned text — no LLM involved. Mirrors the dictionary store's
+//! expands to canned text  -  no LLM involved. Mirrors the dictionary store's
 //! persistence shape exactly.
 
 use std::path::Path;
@@ -38,7 +38,7 @@ impl SnippetStore {
         std::fs::write(path, json)
     }
 
-    /// Add an entry, de-duplicating by trigger (case-insensitive) — one rule per
+    /// Add an entry, de-duplicating by trigger (case-insensitive)  -  one rule per
     /// trigger, so re-adding an existing trigger replaces its expansion.
     pub fn add(&mut self, trigger: String, expansion: String) {
         if let Some(existing) = self

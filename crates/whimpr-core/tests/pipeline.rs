@@ -1,13 +1,13 @@
 //! Integration test: exercises the platform-agnostic half of the dictation
-//! pipeline — snippet match, dictionary prefilter, cleanup message assembly,
-//! and the deterministic gates — wired together the same way the real
+//! pipeline  -  snippet match, dictionary prefilter, cleanup message assembly,
+//! and the deterministic gates  -  wired together the same way the real
 //! `clean_transcript()` in each platform layer (hotkey.rs/win.rs/linux.rs)
 //! composes them, but using a fake `CleanupProvider` instead of a real
 //! network/local-model call.
 //!
 //! ponytail: this can't reach the ASR or the actual OS paste call (those need
 //! a microphone and a real window session, which is exactly why they were
-//! never covered by any automated test) — it proves the *logic* pipeline that
+//! never covered by any automated test)  -  it proves the *logic* pipeline that
 //! CAN run headless, which is the gap that was actually fixable here.
 
 use whimpr_core::cleanup::{build_messages, evaluate_gates, CleanupProvider, HealthStatus, ProviderId};
@@ -33,7 +33,7 @@ impl CleanupProvider for FakeProvider {
 }
 
 /// A snippet match should short-circuit the pipeline entirely: no dictionary
-/// lookup, no provider call, no gate evaluation — the expansion is the result.
+/// lookup, no provider call, no gate evaluation  -  the expansion is the result.
 #[test]
 fn snippet_match_short_circuits_before_cleanup() {
     let mut snippets = SnippetStore::default();
@@ -78,7 +78,7 @@ fn dictionary_vocab_flows_into_cleanup_messages_and_passes_light_gate() {
 }
 
 /// A provider that hallucinates a full rewrite must be caught by the Light
-/// gate and rejected — the platform layer's fallback-to-raw path is what
+/// gate and rejected  -  the platform layer's fallback-to-raw path is what
 /// keeps a bad edit from ever reaching the user's cursor.
 #[test]
 fn hallucinated_rewrite_is_rejected_by_the_light_gate() {
@@ -90,6 +90,6 @@ fn hallucinated_rewrite_is_rejected_by_the_light_gate() {
     let verdict = evaluate_gates(raw, &cleaned, CleanupLevel::Light);
     assert!(!verdict.passed(), "an assistant-style rewrite must not pass Light: {verdict:?}");
     // The real pipeline's response to `!verdict.passed()` is to paste the raw
-    // transcript instead — that fallback itself is exercised by
+    // transcript instead  -  that fallback itself is exercised by
     // `crates/whimpr-core/src/cleanup/mod.rs`'s own gate tests, not repeated here.
 }

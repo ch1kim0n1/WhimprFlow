@@ -196,7 +196,7 @@ Flags: `KEYEVENTF_EXTENDEDKEY 0x0001`, `KEYEVENTF_KEYUP 0x0002`, `KEYEVENTF_UNIC
 2. `OpenClipboard(myHwnd)`→`EmptyClipboard()`→`SetClipboardData(CF_UNICODETEXT, GlobalAlloc copy)`→ set `"ExcludeClipboardContentFromMonitorProcessing"` (+ `CanIncludeInClipboardHistory`=0, `CanUploadToCloudClipboard`=0)→`CloseClipboard()`. Record `seq_ours`.
 3. Clear stuck modifiers (`GetAsyncKeyState` for Ctrl/Shift/Win/Alt from the held hotkey → synthesize key-ups with our `dwExtraInfo` marker).
 4. `SendInput` Ctrl+V (or Ctrl+Shift+V / Shift+Insert if target is a terminal by class/exe), all INPUTs one call, each tagged `dwExtraInfo=OUR_MARKER`.
-5. Wait for consumption: register `AddClipboardFormatListener` OR poll `GetClipboardSequenceNumber` with a short cap (~80–400 ms, longer for Outlook/Teams). 
+5. Wait for consumption: register `AddClipboardFormatListener` OR poll `GetClipboardSequenceNumber` with a short cap (~80–400 ms, longer for Outlook/Teams).
 6. Restore: re-set the saved snapshot. If `GetClipboardSequenceNumber` between our set and now shows a 3rd-party change (≠ seq_ours) → a clipboard manager raced; still restore user's original.
 - **Failure detection:** `SendInput` return < #inputs (0 ⇒ blocked by UIPI/another thread  -  but note UIPI won't flag via GetLastError). Optionally verify via UIA value/selection delta or `GetGUIThreadInfo.rcCaret` movement. On failure → Rung C. Apply **chunked paste** (default 250 chars, whitespace-split) for terminal AI agents / very long text (#761).
 

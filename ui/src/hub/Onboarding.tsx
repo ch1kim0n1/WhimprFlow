@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { font, palette } from "../tokens/values";
+import { font } from "../tokens/values";
 import { theme } from "./theme";
 import {
   requestAccessibility,
@@ -86,8 +86,8 @@ function Step({
             fontSize: 13,
             fontWeight: 600,
             fontFamily: font.ui,
-            color: "#fff",
-            background: locked ? theme.textFaint : palette.slate900,
+            color: theme.solidText,
+            background: locked ? theme.textFaint : theme.solidBg,
             whiteSpace: "nowrap",
           }}
         >

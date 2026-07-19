@@ -4,7 +4,7 @@
 //! key-up into the real [`whimpr_core`] dictation state machine, and turns the
 //! machine's actions into `whimpr://flowbar/state` events the overlay pill
 //! renders. There is no audio or ASR yet, so a finalized session is simulated as
-//! completing shortly after key release — enough to see the full
+//! completing shortly after key release  -  enough to see the full
 //! recording → transcribing → done → idle loop driven by the actual state machine.
 //!
 //! In the shipping product this hook lives in a separate sidecar process (so heavy
@@ -83,7 +83,7 @@ mod imp {
     const K_CG_HEAD_INSERT: u32 = 0;
     const K_CG_TAP_OPTION_LISTEN_ONLY: u32 = 1;
     const K_CG_EVENT_FLAGS_CHANGED: u32 = 12;
-    // kCGEventKeyDown — needed (in addition to FlagsChanged) so we can detect the
+    // kCGEventKeyDown  -  needed (in addition to FlagsChanged) so we can detect the
     // Cmd+Shift+V / Cmd+Shift+C "paste/copy last transcript", Cmd+Shift+Z "undo
     // last cleanup edit", and plain Escape "cancel dictation" keys below; the Fn
     // push-to-talk key alone only ever needs FlagsChanged since it has no keycode.
@@ -98,7 +98,7 @@ mod imp {
     const KCG_FLAG_MASK_CONTROL: u64 = 0x0004_0000;
     const KCG_FLAG_MASK_ALTERNATE: u64 = 0x0008_0000;
     const K_CG_KEYBOARD_EVENT_KEYCODE: u32 = 9;
-    // kCGKeyboardEventAutorepeat — nonzero for the synthetic repeat keydowns the OS
+    // kCGKeyboardEventAutorepeat  -  nonzero for the synthetic repeat keydowns the OS
     // sends while a key is held. We only want to fire once per physical press.
     const K_CG_KEYBOARD_EVENT_AUTOREPEAT: u32 = 8;
     const KEYCODE_FN: i64 = 63;
@@ -126,7 +126,7 @@ mod imp {
     static DICTIONARY: OnceLock<Mutex<whimpr_core::DictionaryStore>> = OnceLock::new();
     static SNIPPETS: OnceLock<Mutex<whimpr_core::SnippetStore>> = OnceLock::new();
     static STATS: OnceLock<Mutex<whimpr_core::StatsStore>> = OnceLock::new();
-    /// (raw pre-cleanup text, final pasted text) from the most recent dictation —
+    /// (raw pre-cleanup text, final pasted text) from the most recent dictation  -
     /// feeds the "undo last cleanup edit" hotkey (Cmd+Shift+Z). `None` until the
     /// first dictation completes this run.
     static LAST_TEXTS: OnceLock<Mutex<Option<(String, String)>>> = OnceLock::new();
@@ -152,8 +152,8 @@ mod imp {
     /// less for cleanup and the dictionary to fix downstream).
     ///
     /// `language` is the user's selected ASR language (`None`/`Some("en")` = auto or
-    /// English). `.en`-suffixed models are English-only — they cannot transcribe
-    /// other languages at all — so when a specific *non-English* language is
+    /// English). `.en`-suffixed models are English-only  -  they cannot transcribe
+    /// other languages at all  -  so when a specific *non-English* language is
     /// selected we only consider multilingual model files (no `.en` suffix).
     /// Otherwise we keep preferring `.en` models first (better English accuracy),
     /// falling back to multilingual files if no `.en` model is present.
@@ -279,7 +279,7 @@ mod imp {
     /// (nothing to undo) or nothing has been dictated yet this run.
     ///
     /// v1 simplification: this pastes the raw text as a NEW insertion at the current
-    /// cursor position — it does not attempt to find-and-replace the previously
+    /// cursor position  -  it does not attempt to find-and-replace the previously
     /// pasted cleaned text in place (see perfect-todo.md item 3).
     fn undo_last_cleanup() {
         let pair = LAST_TEXTS
@@ -460,7 +460,7 @@ mod imp {
     ///
     /// Returns `(raw_out, final_text)`: `raw_out` is the pre-cleanup transcript after
     /// `pre_normalize_layout`/`post_process` (what would be pasted if cleanup were
-    /// skipped or rejected — used by the "undo last cleanup edit" hotkey to restore
+    /// skipped or rejected  -  used by the "undo last cleanup edit" hotkey to restore
     /// the un-cleaned text), and `final_text` is what actually gets pasted.
     fn clean_transcript(raw: &str) -> (String, String) {
         let settings = current_settings();
@@ -469,7 +469,7 @@ mod imp {
             return (raw.to_string(), raw.to_string());
         }
         // Turn explicit spoken layout cues ("new line", "new paragraph") into break
-        // markers up front — the model passes an opaque marker through reliably but
+        // markers up front  -  the model passes an opaque marker through reliably but
         // mangles the literal cue words. The model sees `raw` (with markers); the gate
         // and any raw fallback use `raw_out` (markers restored to real breaks) so we
         // never paste a "[[NL]]" token or lose an explicit break.
@@ -504,7 +504,7 @@ mod imp {
             })
         };
         // Selected provider, falling back to local when a cloud key can't be read
-        // (so cleanup still runs) — and Local mode uses the worker directly.
+        // (so cleanup still runs)  -  and Local mode uses the worker directly.
         let result: Option<anyhow::Result<String>> = match settings.cleanup_mode {
             CleanupMode::OpenAi => OPENAI
                 .get()
@@ -526,19 +526,19 @@ mod imp {
                 if whimpr_core::cleanup::evaluate_gates(&raw_out, &cleaned, level).passed() {
                     cleaned
                 } else {
-                    eprintln!("[whimpr] cleanup gate rejected the edit — pasting raw");
+                    eprintln!("[whimpr] cleanup gate rejected the edit  -  pasting raw");
                     raw_out.clone()
                 }
             }
             Some(Err(e)) => {
-                eprintln!("[whimpr] cleanup failed ({e}) — pasting raw");
+                eprintln!("[whimpr] cleanup failed ({e})  -  pasting raw");
                 raw_out.clone()
             }
             None => {
                 if matches!(settings.cleanup_mode, CleanupMode::Local) {
-                    eprintln!("[whimpr] local cleanup model not wired yet — pasting raw");
+                    eprintln!("[whimpr] local cleanup model not wired yet  -  pasting raw");
                 } else {
-                    eprintln!("[whimpr] cleanup provider has no API key — pasting raw");
+                    eprintln!("[whimpr] cleanup provider has no API key  -  pasting raw");
                 }
                 raw_out.clone()
             }
@@ -582,7 +582,7 @@ mod imp {
     }
 
     /// Invoked by the pill's Stop button (Tauri `confirm_dictation` command) to
-    /// end a locked hands-free session — synthesizes the same re-press-to-finalize
+    /// end a locked hands-free session  -  synthesizes the same re-press-to-finalize
     /// input a second `PushToTalk` chord would produce while `Locked`. A no-op in
     /// every other state (Idle, mid-hold, AwaitingLock, Finalizing), matching the
     /// state machine's own handling of a stray `Down` there.
@@ -593,7 +593,7 @@ mod imp {
         }));
     }
 
-    /// Invoked by the pill's Cancel button (Tauri `cancel_dictation` command) —
+    /// Invoked by the pill's Cancel button (Tauri `cancel_dictation` command)  -
     /// synthesizes the same `Cancel` trigger the Escape key produces. A no-op
     /// from Idle.
     pub fn cancel_dictation() {
@@ -656,7 +656,7 @@ mod imp {
                     );
                     if peak < 0.005 {
                         eprintln!(
-                            "[whimpr] ⚠ audio is silent — the mic isn't being captured. Grant \
+                            "[whimpr] ⚠ audio is silent  -  the mic isn't being captured. Grant \
                              Microphone access to your terminal (System Settings → Privacy & \
                              Security → Microphone), then fully quit + reopen it and rerun."
                         );
@@ -682,7 +682,7 @@ mod imp {
                             });
                             let (raw_out, text) = match snippet_expansion {
                                 Some(expansion) => {
-                                    eprintln!("[whimpr] SNIPPET matched — pasting expansion directly");
+                                    eprintln!("[whimpr] SNIPPET matched  -  pasting expansion directly");
                                     (expansion.clone(), expansion)
                                 }
                                 None => {
@@ -801,7 +801,7 @@ mod imp {
                 }
             }
         } else if etype == K_CG_EVENT_KEY_DOWN {
-            // Ignore OS-synthesized auto-repeat keydowns — fire once per physical
+            // Ignore OS-synthesized auto-repeat keydowns  -  fire once per physical
             // press, not once per repeat tick while the chord is held.
             let autorepeat = unsafe {
                 CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_AUTOREPEAT)
@@ -876,7 +876,7 @@ mod imp {
     }
 
     /// Manual hook for Command Mode / Transforms, reachable from the Hub without the
-    /// Fn+Ctrl hotkey — exercises the prompt + provider layer directly.
+    /// Fn+Ctrl hotkey  -  exercises the prompt + provider layer directly.
     pub fn test_command_edit(selection: String, instruction: String) -> Result<String, String> {
         run_command_edit(&selection, &instruction).map_err(|e| e.to_string())
     }
@@ -928,7 +928,7 @@ mod imp {
             match whimpr_asr::WhisperEngine::load(&path) {
                 Ok(engine) => {
                     let _ = ASR.set(Arc::new(engine));
-                    eprintln!("[whimpr] ASR model loaded — ready to transcribe");
+                    eprintln!("[whimpr] ASR model loaded  -  ready to transcribe");
                 }
                 Err(e) => eprintln!("[whimpr] ASR model load failed: {e}"),
             }
@@ -943,18 +943,18 @@ mod imp {
 
         // Accessibility is the ONE permission that makes the Fn CGEventTap global AND
         // lets us post the Cmd+V paste into other apps. Without it, a keyboard tap is
-        // silently limited to frontmost-only — the exact bug. Prompt for it up front.
+        // silently limited to frontmost-only  -  the exact bug. Prompt for it up front.
         if crate::paste::is_trusted() {
-            eprintln!("[whimpr] Accessibility granted — Fn works in every app, paste enabled");
+            eprintln!("[whimpr] Accessibility granted  -  Fn works in every app, paste enabled");
         } else {
             eprintln!(
-                "[whimpr] ⚠ Accessibility NOT granted — Fn only works while WhimprFlow is \
+                "[whimpr] ⚠ Accessibility NOT granted  -  Fn only works while WhimprFlow is \
                  frontmost and paste is disabled. Prompting; grant WhimprFlow under System \
                  Settings → Privacy & Security → Accessibility (no relaunch needed)."
             );
             crate::paste::prompt_accessibility();
         }
-        // Input Monitoring is NOT the gate for a CGEventTap — kept only as diagnostics.
+        // Input Monitoring is NOT the gate for a CGEventTap  -  kept only as diagnostics.
         eprintln!(
             "[whimpr] (info) Input Monitoring: {}",
             crate::paste::input_monitoring_granted()
@@ -968,7 +968,7 @@ mod imp {
 
         // The event tap runs on a thread with its own CFRunLoop. CRITICAL: create it
         // ONLY after the process is trusted for Accessibility. macOS fixes a keyboard
-        // tap's privilege at CGEventTapCreate time — a tap born untrusted is
+        // tap's privilege at CGEventTapCreate time  -  a tap born untrusted is
         // permanently frontmost-only and is NOT upgraded when the grant later arrives.
         // Polling here also means the Fn key starts working the moment the user grants
         // Accessibility, without a relaunch.
@@ -976,7 +976,7 @@ mod imp {
             while !crate::paste::is_trusted() {
                 std::thread::sleep(Duration::from_millis(500));
             }
-            eprintln!("[whimpr] Accessibility present — creating global Fn tap");
+            eprintln!("[whimpr] Accessibility present  -  creating global Fn tap");
             let port = unsafe {
                 CGEventTapCreate(
                     K_CG_SESSION_EVENT_TAP,
@@ -989,7 +989,7 @@ mod imp {
             };
             if port.is_null() {
                 eprintln!(
-                    "[whimpr] Fn tap null despite Accessibility — likely a stale TCC entry from \
+                    "[whimpr] Fn tap null despite Accessibility  -  likely a stale TCC entry from \
                      an earlier build. Run: tccutil reset Accessibility com.whimpr.whimprflow, \
                      then re-grant and relaunch."
                 );
@@ -1021,7 +1021,7 @@ pub use crate::win::{
     snippet_entries, snippet_remove, stats_summary, update_settings,
 };
 
-// Linux uses the real (but unverified) platform layer in `crate::linux` — X11 only
+// Linux uses the real (but unverified) platform layer in `crate::linux`  -  X11 only
 // for this pass; see that module's doc comment for the Wayland follow-up and the
 // XGrabKey / xdotool simplifications made.
 #[cfg(target_os = "linux")]

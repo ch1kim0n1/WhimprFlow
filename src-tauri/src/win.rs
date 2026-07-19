@@ -6,14 +6,14 @@
 //! ⚠️ UNVERIFIED: this module was written on macOS and has **never been compiled or
 //! run on Windows**. The shared crates (audio, ASR, cleanup, core) are
 //! cross-platform, but this Win32 glue will almost certainly need fixes before it
-//! builds and runs. It is `cfg(target_os = "windows")` so it does not affect — and
-//! is not checked by — the macOS build. Treat it as a starting point, not a
+//! builds and runs. It is `cfg(target_os = "windows")` so it does not affect  -  and
+//! is not checked by  -  the macOS build. Treat it as a starting point, not a
 //! shipping port. Default push-to-talk key: Right Ctrl.
 //!
 //! **Hands-free double-tap-lock is a deliberate simplification here**, not a port of
 //! `whimpr_core::StateMachine` (which macOS's `hotkey.rs` drives). This module has no
 //! session-cap warning, no `AwaitingLock`-discards-the-tap semantics, and no cooldown
-//! debounce — it just layers a minimal lock on top of the existing RECORDING-boolean
+//! debounce  -  it just layers a minimal lock on top of the existing RECORDING-boolean
 //! toggle: a key-down within `DOUBLE_TAP_MS` of the previous key-up sets `LOCKED` and
 //! the *next* key-down (or a `confirm_dictation` UI stop click) finalizes instead of
 //! toggling recording off on release. Bringing this module to full state-machine
@@ -21,7 +21,7 @@
 //!
 //! One consequence of not replicating `AwaitingLock`: the first (short) tap of a
 //! double-tap here still finalizes and pastes its own (likely near-empty) capture
-//! before the second press locks — macOS instead discards that tap's audio. This
+//! before the second press locks  -  macOS instead discards that tap's audio. This
 //! module accepts that minor extra paste/no-op as part of the simplification above.
 
 #![cfg(target_os = "windows")]
@@ -52,7 +52,7 @@ use whimpr_core::{AsrEngine, CleanupContext, CleanupMode, CleanupProvider, Stats
 const OVERLAY_LABEL: &str = "whimpr_bar";
 /// Push-to-talk key. Right Ctrl by default (Ctrl+Win chords land in a later pass).
 const PTT_VK: u16 = VK_RCONTROL.0;
-/// Command Mode hotkey: Ctrl+Alt+Space — mirrors macOS's Fn+Ctrl chord (see
+/// Command Mode hotkey: Ctrl+Alt+Space  -  mirrors macOS's Fn+Ctrl chord (see
 /// `hotkey.rs`'s `tap_callback`). Detection-only scaffold on this platform; see
 /// `command_mode_edit` below for why it does not attempt real selection
 /// read/write here. Not user-rebindable this pass (see `whimpr_core::KeyBindings`'s
@@ -61,7 +61,7 @@ const COMMAND_MODE_VK: u16 = VK_SPACE.0;
 
 /// Windows virtual-key code for a bindable [`whimpr_core::Key`]. For `Key::Char`,
 /// the VK code for `'A'..='Z'`/`'0'..='9'` is literally the ASCII value, per the
-/// Win32 `Virtual-Key Codes` reference — no lookup table needed there.
+/// Win32 `Virtual-Key Codes` reference  -  no lookup table needed there.
 fn vk_for_key(key: whimpr_core::Key) -> u16 {
     use whimpr_core::Key;
     match key {
@@ -85,7 +85,7 @@ fn mods_match_chord(chord: &whimpr_core::Chord) -> bool {
 }
 
 /// The current keybindings, read fresh so a rebind saved from the Shortcuts UI
-/// takes effect immediately — no relaunch or hook reinstall needed.
+/// takes effect immediately  -  no relaunch or hook reinstall needed.
 fn current_keybindings() -> whimpr_core::KeyBindings {
     SETTINGS
         .get()
@@ -97,7 +97,7 @@ static APP: OnceLock<AppHandle> = OnceLock::new();
 static CLOCK: OnceLock<Instant> = OnceLock::new();
 static RECORDING: AtomicBool = AtomicBool::new(false);
 /// Set while a hands-free (double-tap-locked) session is open. While true, a
-/// key-up does NOT stop capture — only the next key-down (the "third press") or
+/// key-up does NOT stop capture  -  only the next key-down (the "third press") or
 /// a `confirm_dictation` UI stop click does. See the module doc comment for how
 /// this minimal lock differs from macOS's full state-machine-driven behavior.
 static LOCKED: AtomicBool = AtomicBool::new(false);
@@ -122,7 +122,7 @@ static SETTINGS: OnceLock<Mutex<whimpr_core::Settings>> = OnceLock::new();
 static DICTIONARY: OnceLock<Mutex<whimpr_core::DictionaryStore>> = OnceLock::new();
 static SNIPPETS: OnceLock<Mutex<whimpr_core::SnippetStore>> = OnceLock::new();
 static STATS: OnceLock<Mutex<whimpr_core::StatsStore>> = OnceLock::new();
-/// (raw pre-cleanup text, final pasted text) from the most recent dictation —
+/// (raw pre-cleanup text, final pasted text) from the most recent dictation  -
 /// feeds the "undo last cleanup edit" hotkey (Ctrl+Alt+Z). `None` until the first
 /// dictation completes this run.
 static LAST_TEXTS: OnceLock<Mutex<Option<(String, String)>>> = OnceLock::new();
@@ -211,7 +211,7 @@ fn emit_bar(state: &'static str) {
 }
 
 /// The foreground process's executable name (e.g. "chrome.exe"), for per-app
-/// cleanup formatting — the Windows analogue of the macOS bundle id.
+/// cleanup formatting  -  the Windows analogue of the macOS bundle id.
 fn foreground_app() -> Option<String> {
     unsafe {
         let hwnd: HWND = GetForegroundWindow();
@@ -283,7 +283,7 @@ fn current_settings_inner() -> whimpr_core::Settings {
 
 /// Returns `(raw_out, final_text)`: `raw_out` is the pre-cleanup transcript after
 /// `pre_normalize_layout`/`post_process` (what would be pasted if cleanup were
-/// skipped or rejected — used by the "undo last cleanup edit" hotkey to restore the
+/// skipped or rejected  -  used by the "undo last cleanup edit" hotkey to restore the
 /// un-cleaned text), and `final_text` is what actually gets pasted.
 fn clean_transcript(raw: &str) -> (String, String) {
     let settings = current_settings_inner();
@@ -387,7 +387,7 @@ fn on_ptt_up() {
     if LOCKED.load(Ordering::SeqCst) {
         // Locked: releasing the key must not stop capture, but the release
         // timestamp isn't needed for anything further (the lock only clears via
-        // `finalize_locked_session`) — nothing to record here.
+        // `finalize_locked_session`)  -  nothing to record here.
         return;
     }
     if !RECORDING.swap(false, Ordering::SeqCst) {
@@ -454,7 +454,7 @@ fn finish_capture_and_paste(app: Option<String>) {
 }
 
 /// Called by the overlay pill's Stop button (`confirm_dictation` Tauri command)
-/// to end a locked hands-free session — the UI equivalent of the third
+/// to end a locked hands-free session  -  the UI equivalent of the third
 /// key-down in `on_ptt_down`. A no-op unless a session is actually locked.
 pub fn confirm_dictation() {
     if LOCKED.load(Ordering::SeqCst) {
@@ -465,7 +465,7 @@ pub fn confirm_dictation() {
 /// Called by the overlay pill's Cancel button (`cancel_dictation` Tauri
 /// command) *or* the user's configured Cancel hotkey (`hook_proc`'s dynamic
 /// binding check, default bare Escape) to discard whatever dictation is in
-/// flight — locked or a normal push-to-talk hold — without transcribing it.
+/// flight  -  locked or a normal push-to-talk hold  -  without transcribing it.
 /// A no-op when idle.
 pub fn cancel_dictation() {
     let was_locked = LOCKED.swap(false, Ordering::SeqCst);
@@ -476,7 +476,7 @@ pub fn cancel_dictation() {
     emit_bar("cancelled");
     if let Some(slot) = CAPTURE.get() {
         if let Some(handle) = slot.lock().unwrap_or_else(|e| e.into_inner()).take() {
-            let _ = handle.stop(); // discard — do not transcribe
+            let _ = handle.stop(); // discard  -  do not transcribe
         }
     }
     // Let the "cancelled" tick linger briefly before returning to idle, mirroring
@@ -497,7 +497,7 @@ fn latest_transcript() -> Option<String> {
         .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).latest().map(|r| r.text.clone()))
 }
 
-/// True when both Ctrl and Alt are currently held — Command Mode's chord isn't
+/// True when both Ctrl and Alt are currently held  -  Command Mode's chord isn't
 /// user-rebindable this pass, so it keeps its own simple check rather than
 /// going through `mods_match_chord`/`whimpr_core::Chord`.
 fn ctrl_alt_held() -> bool {
@@ -540,7 +540,7 @@ fn copy_last_transcript() {
 /// undo) or nothing has been dictated yet this run.
 ///
 /// v1 simplification: this pastes the raw text as a NEW insertion at the current
-/// cursor position — it does not attempt to find-and-replace the previously
+/// cursor position  -  it does not attempt to find-and-replace the previously
 /// pasted cleaned text in place (see perfect-todo.md item 3).
 fn undo_last_cleanup() {
     let pair = LAST_TEXTS.get().and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone());
@@ -564,20 +564,20 @@ fn undo_last_cleanup() {
 // ⚠️ STUB, NOT IMPLEMENTED on Windows. The macOS path (`hotkey.rs`) reads and
 // writes the focused element's text selection via the Accessibility API
 // (`AXUIElementCopyAttributeValue`/`AXUIElementSetAttributeValue` on
-// `kAXSelectedTextAttribute`). The Win32 analogue is UI Automation —
+// `kAXSelectedTextAttribute`). The Win32 analogue is UI Automation  -
 // `IUIAutomation::GetFocusedElement`, `ITextPattern`/`ITextPattern2` /
 // `ITextRangeProvider` to read the current selection range and `SetValue`/
-// `RemoveFromSelection`+insert to replace it — a materially different API
+// `RemoveFromSelection`+insert to replace it  -  a materially different API
 // surface (COM-based, not a small C FFI) with its own per-app quirks. Wiring
 // that blind, on a machine that has never run Windows to verify against, risks
 // shipping code that silently corrupts a user's selected text in an arbitrary
-// third-party app — worse than doing nothing. This function only recognizes the
+// third-party app  -  worse than doing nothing. This function only recognizes the
 // hotkey chord and reports the gap; a real UIA implementation needs to be built
 // and verified ON Windows hardware in a follow-up pass.
 fn command_mode_edit() -> anyhow::Result<()> {
     eprintln!(
         "[whimpr:win] Command Mode not yet implemented on Windows (needs UI Automation \
-         selection read/write, unverified without Windows hardware) — no-op"
+         selection read/write, unverified without Windows hardware)  -  no-op"
     );
     anyhow::bail!(
         "Command Mode not yet implemented on Windows (needs UI Automation selection \
@@ -598,13 +598,13 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
                 _ => {}
             }
         } else {
-            // Read the user's current bindings fresh on every keypress (cheap —
+            // Read the user's current bindings fresh on every keypress (cheap  -
             // a Mutex lock over a small Copy struct) so a rebind saved from the
             // Shortcuts UI takes effect immediately, no relaunch or hook
             // reinstall needed.
             let bindings = current_keybindings();
             // (latch, vk-for-this-binding, mods-required, the action to run).
-            // Cancel has no OS-level hook on Windows until now — this is a new
+            // Cancel has no OS-level hook on Windows until now  -  this is a new
             // capability, not just a port of the existing three.
             let candidates: [(&AtomicBool, u16, whimpr_core::Chord, fn()); 4] = [
                 (&CANCEL_KEY_DOWN, vk_for_key(bindings.cancel.key), bindings.cancel, cancel_dictation),
@@ -618,7 +618,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
                 }
                 match wparam.0 as u32 {
                     WM_KEYDOWN | WM_SYSKEYDOWN => {
-                        // swap(true) returns the prior state — only act on the
+                        // swap(true) returns the prior state  -  only act on the
                         // leading edge (not-down -> down) so held-key
                         // auto-repeat fires once.
                         if !latch.swap(true, Ordering::SeqCst) && mods_match_chord(&chord) {
@@ -633,7 +633,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
         if vk == COMMAND_MODE_VK {
             match wparam.0 as u32 {
                 WM_KEYDOWN | WM_SYSKEYDOWN => {
-                    // swap(true) returns the prior state — only act on the leading
+                    // swap(true) returns the prior state  -  only act on the leading
                     // edge so held-key auto-repeat doesn't refire the (stub) action.
                     if !COMMAND_MODE_KEY_DOWN.swap(true, Ordering::SeqCst) && ctrl_alt_held() {
                         let _ = command_mode_edit();
@@ -700,7 +700,7 @@ pub fn install(app: AppHandle) {
     eprintln!(
         "[whimpr:win] keyboard hook installed (push-to-talk: Right Ctrl, fixed; cancel/paste-last/\
          copy-last/undo-last: see Settings → Shortcuts for current bindings, defaults Ctrl+Alt+V/C/Z; \
-         Command Mode: Ctrl+Alt+Space [stub, not implemented — see command_mode_edit], fixed)"
+         Command Mode: Ctrl+Alt+Space [stub, not implemented  -  see command_mode_edit], fixed)"
     );
 }
 

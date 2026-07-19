@@ -3,6 +3,7 @@ import { font } from "../tokens/values";
 import { theme } from "./theme";
 import { Icon, type IconName } from "./icons";
 import { gsap, prefersReduced, EASE } from "./anim";
+import brandIcon from "../assets/whimprflow-icon.png";
 
 export type Page =
   | "home"
@@ -143,7 +144,14 @@ export function Sidebar({ page, setPage }: { page: Page; setPage: (p: Page) => v
 
       {/* Wordmark + Local badge */}
       <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "0 8px 20px", position: "relative", zIndex: 1 }}>
-        <span style={{ fontFamily: font.serif, fontSize: 20, fontWeight: 600, letterSpacing: -0.3, color: theme.textStrong }}>
+        <img
+          src={brandIcon}
+          alt=""
+          width={26}
+          height={26}
+          style={{ borderRadius: 7, display: "block", boxShadow: theme.shadowSoft }}
+        />
+        <span style={{ fontFamily: font.serif, fontSize: 19, fontWeight: 600, letterSpacing: -0.3, color: theme.textStrong }}>
           WhimprFlow
         </span>
         <span

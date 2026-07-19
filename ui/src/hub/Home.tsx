@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { font, palette } from "../tokens/values";
+import { font } from "../tokens/values";
 import { theme } from "./theme";
 import { useStats } from "./ui";
 import { Icon } from "./icons";
@@ -70,7 +70,8 @@ function VoiceField() {
           else ctx.lineTo(x, y);
         }
         const grad = ctx.createLinearGradient(0, 0, w, 0);
-        const c = r.teal ? "58,232,216" : "90,102,117";
+        const dark = document.documentElement.dataset.theme === "dark";
+        const c = r.teal ? "58,232,216" : dark ? "150,162,178" : "90,102,117";
         grad.addColorStop(0, `rgba(${c},0)`);
         grad.addColorStop(0.5, `rgba(${c},${r.alpha})`);
         grad.addColorStop(1, `rgba(${c},0)`);
@@ -245,7 +246,7 @@ export function Home() {
         </p>
 
         <div className="home-cta" style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 26, flexWrap: "wrap" }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "10px 15px", borderRadius: 999, background: theme.textStrong, color: palette.slate050, fontSize: 13.5, fontWeight: 600, boxShadow: theme.shadow }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "10px 15px", borderRadius: 999, background: theme.solidBg, color: theme.solidText, fontSize: 13.5, fontWeight: 600, boxShadow: theme.shadow }}>
             <Icon name="mic" size={16} strokeWidth={1.9} style={{ color: theme.accentBright }} />
             Hold Fn to dictate
           </span>

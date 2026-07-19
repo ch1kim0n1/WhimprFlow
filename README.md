@@ -1,100 +1,170 @@
-# WhimprFlow
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/whimprflow-logo-light.png" />
+    <img src="public/whimprflow-logo-dark.png" alt="WhimprFlow" width="520" />
+  </picture>
+</p>
 
-A **local-first, cross-platform voice dictation app**  -  hold a key, speak, and clean text lands wherever your cursor is. Speech is transcribed on-device with Whisper and cleaned up (filler removal, self-corrections, punctuation, lists/newlines) by a local LLM, with an optional cloud path. It re-creates the workflow of a Wispr-Flow-style dictation tool from scratch, with its own name, palette, and code.
+<p align="center"><strong>Private voice dictation that keeps up with your thinking.</strong></p>
 
-> ⚠️ **This is a proof of concept, vibe-coded in a few hours.** It works and the core loop is real, but it is rough and needs a lot of polish, testing, and hardening before it's anything like production quality. Treat it as a starting point, not a finished product.
+<p align="center">
+  Hold a trigger, speak naturally, and receive polished text at the active cursor.<br />
+  WhimprFlow is a local-first desktop dictation tool built with Rust, Tauri, and React.
+</p>
 
----
+<p align="center">
+  <img src="public/whimprflow-app-icon-256.png" alt="WhimprFlow app icon" width="96" />
+</p>
 
-## Platform status
+> **Project status:** Active development. The core desktop workflow is implemented, but this repository is not yet a signed, installer-ready release. See [Platform Notes](#platform-notes) for known boundaries.
 
-| Platform | Status |
-|----------|--------|
-| **macOS 14+** | **Built and working**  -  developed and tested locally (Apple Silicon). |
-| **Windows 10/11** | **Built and working**  -  compiles and runs on real Windows 11 (MSVC). Push-to-talk (hold **Right Ctrl**), Whisper ASR, clipboard+`SendInput` paste, and cloud cleanup (OpenAI or any OpenAI-compatible API, e.g. OpenRouter) are verified end-to-end. Auto-learn dictionary capture is still macOS-only; the local (on-device) LLM cleanup worker builds but is CPU-only for now (no CUDA/Vulkan yet). |
+## Product Preview
 
-Both platforms are build-from-source only for now  -  there's no signed installer/release pipeline yet, so `git clone` + the steps below is the way to run it on either OS.
+<p align="center">
+  <img src="public/readme-hub.png" alt="WhimprFlow Hub showing the local-first dictation workspace" width="100%" />
+</p>
 
----
+The Hub is the command center for dictation preferences, personal vocabulary, snippets, transforms, shortcuts, and local usage insights. During dictation, a compact always-on-top Flow Bar communicates recording and cleanup state without interrupting the app you are working in.
 
-## What's in it
+## Why WhimprFlow
 
-- **On-device ASR**  -  Whisper (via `whisper.cpp`), running on the GPU. Ships a small English model by default; larger models are auto-preferred if present.
-- **Local LLM cleanup**  -  Qwen3-4B-Instruct (via `llama.cpp`) runs as a separate worker process and cleans the transcript: removes fillers, resolves spoken self-corrections ("meet at 2… no wait, 3" → "3"), applies spoken punctuation, and formats lists/paragraphs. Deterministic gates guard against over-editing, with a raw-transcript fallback.
-- **Optional cloud cleanup**  -  OpenAI (default) / Anthropic, behind one trait. Keys are stored in the OS keychain (macOS Keychain / Windows Credential Manager), **never in a file**.
-- **Floating pill UI**  -  a small always-on-top bar showing idle / recording / processing states.
-- **Personal dictionary + auto-learn**  -  teach it names and terms; on macOS a post-paste Accessibility observer watches for a one-word correction and learns it automatically (conservative filters to avoid junk). *Auto-learn capture is macOS-only so far.*
-- **Usage stats**  -  words dictated, words-per-minute, day streak, time saved, 7-day activity, all stored locally.
+Voice input is only useful when it is fast, predictable, and safe to use in every application. WhimprFlow is designed around that loop:
+
+1. Hold the push-to-talk trigger.
+2. Speak in a natural, unstructured way.
+3. Transcribe locally with Whisper.
+4. Optionally clean the transcript with a local model or a cloud provider.
+5. Validate the result, preserve a raw fallback, and place text at the active cursor.
+
+## Capabilities
+
+| Area | What it does |
+| --- | --- |
+| Local transcription | Uses `whisper.cpp` for on-device speech recognition. macOS uses Metal where available; Windows currently targets CPU execution. |
+| Transcript cleanup | Supports raw output, local `llama.cpp` cleanup, and optional OpenAI-compatible or Anthropic cleanup paths. |
+| Guardrails | Applies deterministic cleanup gates and can fall back to the raw transcript instead of silently over-editing. |
+| Floating Flow Bar | Keeps the record, process, completion, and cancellation states visible above other apps. |
+| Personal language | Provides a dictionary, snippets, style controls, transforms, and a scratchpad in the Hub. |
+| Local insights | Tracks words dictated, dictation pace, time saved, streaks, and recent activity locally. |
+| Secure configuration | Keeps cloud-provider credentials in the operating system credential store rather than plaintext configuration files. |
 
 ## Architecture
 
-Tauri v2 (Rust core + React/TypeScript webviews). Platform-agnostic logic lives in `crates/whimpr-core` (state machine, cleanup prompts/gates, dictionary, stats). ASR, audio, and the LLM worker are separate crates. The Tauri app in `src-tauri/` hosts the UI and wires the native hotkey/injection per platform (`hotkey.rs` on macOS, `win.rs` on Windows).
-
-```
-crates/
-  whimpr-core/       state machine, cleanup (prompts/gates/levels), dictionary, stats
-  whimpr-asr/        Whisper ASR
-  whimpr-audio/      mic capture + resampling
-  whimpr-cleanup/    OpenAI / Anthropic cloud providers
-  whimpr-llm-worker/ local llama.cpp cleanup worker (separate process)
-src-tauri/           Tauri shell: hotkey/paste/autolearn (macOS), win.rs (Windows)
-ui/                  React Hub + overlay pill
-docs/                spec, architecture notes, research
+```mermaid
+flowchart LR
+  A[Push-to-talk] --> B[Microphone capture]
+  B --> C[Whisper ASR]
+  C --> D{Cleanup mode}
+  D -->|Raw| E[Validation gates]
+  D -->|Local LLM| E
+  D -->|Cloud provider| E
+  E --> F[Paste at active cursor]
+  E --> G[Local history and insights]
 ```
 
-## Build (macOS)
+WhimprFlow separates portable product logic from platform-specific integration:
 
-Requires Rust (stable), Node + pnpm, and the Xcode command-line tools.
+| Path | Responsibility |
+| --- | --- |
+| `crates/whimpr-core` | State machine, cleanup prompts and gates, dictionary logic, usage statistics. |
+| `crates/whimpr-asr` | Whisper-backed speech recognition. |
+| `crates/whimpr-audio` | Microphone capture and resampling. |
+| `crates/whimpr-cleanup` | Cloud cleanup providers. |
+| `crates/whimpr-llm-worker` | Local `llama.cpp` cleanup worker process. |
+| `src-tauri` | Tauri shell, native shortcuts, text insertion, platform integration. |
+| `ui` | React Hub and floating Flow Bar. |
+| `docs` | Product notes, architecture, research, and implementation status. |
+
+## Quick Start
+
+### macOS
+
+**Prerequisites:** Rust stable, Node.js, npm or pnpm, and Xcode Command Line Tools.
 
 ```bash
-cd ui && pnpm install && cd ..
-# Dev:
+cd ui
+pnpm install
+cd ..
 ./dev.sh
-# Or a signed .app bundle:
+```
+
+To create an application bundle:
+
+```bash
 ui/node_modules/.bin/tauri build --bundles app
 ```
 
-Models are **not** committed (they're multi-GB). Place them under
-`~/Library/Application Support/WhimprFlow/models/` (macOS)  - 
-a Whisper `ggml-*.en.bin` and a Qwen GGUF for local cleanup.
+### Windows
 
-## Build (Windows)
+**Prerequisites:** Rust stable with the MSVC toolchain, Node.js, npm or pnpm, CMake, LLVM/clang for `bindgen`, and Visual Studio Build Tools with the Desktop development with C++ workload.
 
-Requires Rust (stable, MSVC toolchain), [CMake](https://cmake.org/download/), LLVM/clang
-(for `bindgen`  -  set `LIBCLANG_PATH` to its `bin/` dir if it isn't auto-detected), the
-**Visual Studio Build Tools** (Desktop development with C++ workload), and Node + pnpm.
+If `bindgen` does not discover clang automatically, set `LIBCLANG_PATH` to clang's `bin` directory.
 
 ```powershell
-cd ui; pnpm install; cd ..
-# Dev (starts the Vite UI server + the app with hot reload):
+cd ui
+pnpm install
+cd ..
 ui\node_modules\.bin\tauri.CMD dev
-# Or a release build:
+```
+
+For a release build:
+
+```powershell
 ui\node_modules\.bin\tauri.CMD build
 ```
 
-Place models under `%APPDATA%\WhimprFlow\models\`  -  a Whisper `ggml-*.en.bin`
-(e.g. `ggml-base.en.bin` from
-[huggingface.co/ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp))
-and, optionally, a Qwen GGUF for local (offline) cleanup. No local LLM model?
-Set Cleanup Engine to **OpenAI** in the Hub's Settings pane and point the base URL at
-any OpenAI-compatible API  -  for example `https://openrouter.ai/api/v1` for
-[OpenRouter](https://openrouter.ai), with your OpenRouter key pasted into the
-"OpenAI API key" field.
+## Models and Cleanup
 
-Push-to-talk defaults to **Right Ctrl** (hold to record, release to paste)  -  the
-Windows analogue of Wispr Flow's own `Ctrl+Win` default; a configurable hotkey is
-planned but not wired up yet.
+Models are deliberately excluded from source control. Add a Whisper model and, if desired, a local GGUF cleanup model to the platform-specific model directory.
 
-The Windows GPU backend for Whisper/llama.cpp is CPU-only for now (the macOS build
-uses Metal); CUDA/Vulkan feature flags can be added in `crates/whimpr-asr/Cargo.toml`
-and `crates/whimpr-llm-worker/Cargo.toml` for anyone wanting to pick that up.
+| Platform | Model directory |
+| --- | --- |
+| macOS | `~/Library/Application Support/WhimprFlow/models/` |
+| Windows | `%APPDATA%\WhimprFlow\models\` |
 
-## Notes & disclaimers
+Recommended inputs:
 
-- **Not affiliated with, endorsed by, or connected to Wispr Flow or any other product.** WhimprFlow is an independent, from-scratch reimplementation of the dictation workflow, with its own name, branding, colors, strings, and code. No third-party code or assets are included.
-- **Proof of concept.** Rushed, under-tested, and missing plenty (auto-learn is macOS-only and conservative, no installer/notarization/signing pipeline on either OS, error handling is thin). Contributions and fixes welcome.
-- **Privacy.** ASR and default cleanup run on-device. Cloud cleanup is opt-in and only sends the transcript (not audio) to the provider you choose. API keys never touch disk in plaintext.
+- A Whisper `ggml-*.en.bin` model, such as `ggml-base.en.bin`, from the [whisper.cpp model collection](https://huggingface.co/ggerganov/whisper.cpp).
+- An optional GGUF instruction model for fully local cleanup.
+- Or configure an OpenAI-compatible or Anthropic provider in the Hub to use cloud cleanup. Only the transcript is sent to that provider, never the captured audio.
+
+## Privacy and Safety
+
+- Audio capture and Whisper transcription run locally.
+- Local cleanup remains on-device when a local GGUF model is configured.
+- Cloud cleanup is optional and sends only text to the provider you select.
+- API credentials are stored through the macOS Keychain or Windows Credential Manager.
+- Cleanup is guarded against destructive rewrites, with raw-transcript fallback available when a result does not pass validation.
+
+## Platform Notes
+
+| Platform | Current state |
+| --- | --- |
+| macOS 14+ | Reference development target. Apple Silicon can use Metal-backed local inference. Accessibility and Microphone permissions are required for the full desktop workflow. |
+| Windows 10/11 | Native build path and core workflow are present. Local Whisper and local cleanup are CPU-first today; GPU acceleration and additional production hardening remain future work. |
+
+The project still needs packaging, code-signing, notarization, broader device testing, and additional error recovery before it should be treated as production software.
+
+## Development
+
+Useful checks while developing:
+
+```bash
+# Frontend production build
+cd ui && npm run build
+
+# Rust workspace checks
+cargo check --workspace
+```
+
+Keep user-facing copy free of em dashes and prefer clear punctuation such as commas, colons, or parentheses. The project uses ASCII-first source text unless a character is required for the product experience.
+
+## Contribution and Attribution
+
+Contributions that improve reliability, accessibility, platform support, test coverage, and local model performance are useful.
+
+WhimprFlow is independent software. It is not affiliated with, endorsed by, or connected to Wispr Flow or any other product. The application uses its own codebase, branding, iconography, and user interface.
 
 ## License
 
-MIT  -  see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

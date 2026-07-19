@@ -2,7 +2,7 @@
 //!
 //! Runs as a macOS accessory (menu-bar) app: a tray item, a transparent
 //! always-on-top Flow Bar overlay, and a hidden Hub window. This is the M0
-//! skeleton — the sidecar supervisor, real state-machine bridge, and native
+//! skeleton  -  the sidecar supervisor, real state-machine bridge, and native
 //! panel promotion arrive in later milestones. The overlay already listens for
 //! `whimpr://flowbar/state`, so the tray demo items prove the event pipeline.
 
@@ -20,16 +20,11 @@ use serde::Serialize;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 
 const OVERLAY_LABEL: &str = "whimpr_bar";
 const HUB_LABEL: &str = "main";
-
-#[derive(Clone, Serialize)]
-struct BarStatePayload {
-    state: &'static str,
-}
 
 /// Anchor the overlay window bottom-center of its monitor.
 fn position_overlay(w: &WebviewWindow) {
@@ -41,7 +36,7 @@ fn position_overlay(w: &WebviewWindow) {
         .or_else(|| w.current_monitor().ok().flatten())
         .or_else(|| w.available_monitors().ok().and_then(|m| m.into_iter().next()));
     let Some(monitor) = monitor else {
-        eprintln!("[whimpr] no monitor found — overlay stays at default position");
+        eprintln!("[whimpr] no monitor found  -  overlay stays at default position");
         return;
     };
     let scale = monitor.scale_factor();
@@ -91,8 +86,26 @@ fn build_hub(app: &tauri::App) -> tauri::Result<WebviewWindow> {
         .build()
 }
 
-fn emit_bar_state(app: &tauri::AppHandle, state: &'static str) {
-    let _ = app.emit_to(OVERLAY_LABEL, "whimpr://flowbar/state", BarStatePayload { state });
+/// Render a keybinding chord with macOS glyphs (for the tray shortcuts menu).
+fn fmt_chord(c: &whimpr_core::Chord) -> String {
+    let mut s = String::new();
+    if c.ctrl {
+        s.push('⌃');
+    }
+    if c.alt {
+        s.push('⌥');
+    }
+    if c.shift {
+        s.push('⇧');
+    }
+    if c.meta {
+        s.push('⌘');
+    }
+    match c.key {
+        whimpr_core::Key::Escape => s.push_str("Esc"),
+        whimpr_core::Key::Char(ch) => s.push(ch.to_ascii_uppercase()),
+    }
+    s
 }
 
 #[tauri::command]
@@ -204,7 +217,7 @@ fn request_microphone() {
     }
 }
 
-/// Request Accessibility — the permission that makes the Fn key work in every app and
+/// Request Accessibility  -  the permission that makes the Fn key work in every app and
 /// lets us type into other apps. Fire the native prompt, then open the pane.
 #[tauri::command]
 fn request_accessibility() {
@@ -226,7 +239,7 @@ fn request_input_monitoring() {
     }
 }
 
-/// Called by the overlay pill's Stop button to end a locked hands-free session —
+/// Called by the overlay pill's Stop button to end a locked hands-free session  -
 /// the UI equivalent of the re-press-to-finalize hotkey transition. A no-op
 /// unless a session is actually locked.
 #[tauri::command]
@@ -262,7 +275,7 @@ fn test_command_edit(selection: String, instruction: String) -> Result<String, S
 
 /// Run a **Transform**: rewrite `text` per a canned `instruction` (e.g. "rewrite
 /// this as a polished email") through whichever cleanup provider is configured.
-/// Reuses the Command Mode prompt + provider path — a Transform is just Command
+/// Reuses the Command Mode prompt + provider path  -  a Transform is just Command
 /// Mode with a preset instruction instead of a spoken one. macOS-only in this
 /// pass, same as the Command Mode test hook it shares plumbing with.
 #[tauri::command]
@@ -299,7 +312,7 @@ fn set_api_key(provider: String, key: String) -> Result<(), String> {
         keyring::Entry::new("com.whimpr.whimprflow", account).map_err(|e| e.to_string())?;
     let key = key.trim();
     // Delete any existing item first so the new one is created by (and readable to)
-    // this app — a key added via the `security` CLI isn't readable by the app.
+    // this app  -  a key added via the `security` CLI isn't readable by the app.
     let _ = entry.delete_credential();
     if !key.is_empty() {
         entry.set_password(key).map_err(|e| e.to_string())?;
@@ -346,31 +359,51 @@ pub fn run() {
             // Wire the Fn key to the pill via the real state machine.
             hotkey::install(app.handle().clone());
 
+            // Tray menu doubles as an at-a-glance popup of the active shortcuts,
+            // built from the user's current keybindings.
+            let kb = hotkey::current_settings().keybindings;
+            let header = MenuItem::with_id(app, "hdr", "WhimprFlow Shortcuts", false, None::<&str>)?;
+            let sep0 = PredefinedMenuItem::separator(app)?;
+            let sc_ptt = MenuItem::with_id(app, "sc_ptt", "Push-to-talk:  Hold Fn", true, None::<&str>)?;
+            let sc_hf = MenuItem::with_id(app, "sc_hf", "Hands-free lock:  Double-tap Fn", true, None::<&str>)?;
+            let sc_cmd = MenuItem::with_id(app, "sc_cmd", "Command Mode:  Hold Fn+Ctrl", true, None::<&str>)?;
+            let sc_cancel = MenuItem::with_id(app, "sc_cancel", &format!("Cancel:  {}", fmt_chord(&kb.cancel)), true, None::<&str>)?;
+            let sc_paste = MenuItem::with_id(app, "sc_paste", &format!("Paste last:  {}", fmt_chord(&kb.paste_last)), true, None::<&str>)?;
+            let sc_copy = MenuItem::with_id(app, "sc_copy", &format!("Copy last:  {}", fmt_chord(&kb.copy_last)), true, None::<&str>)?;
+            let sc_undo = MenuItem::with_id(app, "sc_undo", &format!("Undo cleanup:  {}", fmt_chord(&kb.undo_last)), true, None::<&str>)?;
+            let sep1 = PredefinedMenuItem::separator(app)?;
             let open = MenuItem::with_id(app, "open", "Open WhimprFlow", true, None::<&str>)?;
-            let demo_rec =
-                MenuItem::with_id(app, "demo_rec", "Demo: recording", true, None::<&str>)?;
-            let demo_idle = MenuItem::with_id(app, "demo_idle", "Demo: idle", true, None::<&str>)?;
-            let sep = PredefinedMenuItem::separator(app)?;
             let quit = MenuItem::with_id(app, "quit", "Quit WhimprFlow", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &demo_rec, &demo_idle, &sep, &quit])?;
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &header, &sep0, &sc_ptt, &sc_hf, &sc_cmd, &sc_cancel, &sc_paste, &sc_copy,
+                    &sc_undo, &sep1, &open, &quit,
+                ],
+            )?;
 
             let mut tray = TrayIconBuilder::new()
                 .menu(&menu)
-                .show_menu_on_left_click(false)
+                .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "open" => {
+                    "open" | "sc_cancel" | "sc_paste" | "sc_copy" | "sc_undo" => {
                         if let Some(w) = app.get_webview_window(HUB_LABEL) {
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
                     }
-                    "demo_rec" => emit_bar_state(app, "recording"),
-                    "demo_idle" => emit_bar_state(app, "idle"),
                     "quit" => app.exit(0),
                     _ => {}
                 });
-            if let Some(icon) = app.default_window_icon().cloned() {
-                tray = tray.icon(icon);
+            match tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png")) {
+                Ok(img) => {
+                    tray = tray.icon(img);
+                }
+                Err(_) => {
+                    if let Some(icon) = app.default_window_icon().cloned() {
+                        tray = tray.icon(icon);
+                    }
+                }
             }
             tray.build(app)?;
 

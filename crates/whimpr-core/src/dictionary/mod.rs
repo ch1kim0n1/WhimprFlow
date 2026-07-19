@@ -40,7 +40,7 @@ pub fn is_common_word(word: &str) -> bool {
 /// consonant-skeleton strings, e.g. "jumped" -> ("JMPT", "AMPT")). Empty strings
 /// are returned for empty/non-alphabetic input rather than a meaningless match.
 ///
-/// Algorithm: Double Metaphone (Lawrence Philips, 2000) via the `rphonetic` crate —
+/// Algorithm: Double Metaphone (Lawrence Philips, 2000) via the `rphonetic` crate  -
 /// chosen over Soundex because it emits primary+alternate codes and is
 /// substantially better at English proper nouns/names (see
 /// `docs/research/gap-auto-learned-dictionary.md` §6).
@@ -99,7 +99,7 @@ pub struct DictionaryEntry {
 
 impl DictionaryEntry {
     /// Populate `phonetic_primary`/`phonetic_alternate` from `correct` if not
-    /// already cached. Idempotent — safe to call on every load.
+    /// already cached. Idempotent  -  safe to call on every load.
     fn ensure_phonetic(&mut self) {
         if self.phonetic_primary.is_empty() && self.phonetic_alternate.is_empty() {
             let (primary, alternate) = phonetic_codes(&self.correct);
@@ -184,9 +184,9 @@ impl DictionaryStore {
         self.entries.len() != before
     }
 
-    /// Select the entries relevant to `utterance` — those whose spelling or a known
+    /// Select the entries relevant to `utterance`  -  those whose spelling or a known
     /// mishear is edit-close to a spoken token (or adjacent token pair, to catch
-    /// split words like "charge bee" → "ChargeBee") — capped to `max`.
+    /// split words like "charge bee" → "ChargeBee")  -  capped to `max`.
     pub fn prefilter(&self, utterance: &str, max: usize) -> Vec<VocabEntry> {
         let toks: Vec<String> = utterance
             .split_whitespace()
@@ -202,7 +202,7 @@ impl DictionaryStore {
             grams.push(format!("{}{}", w[0], w[1]));
         }
 
-        // Precompute each gram's Double Metaphone codes once, up front — a cheap
+        // Precompute each gram's Double Metaphone codes once, up front  -  a cheap
         // first-pass filter checked against every entry's *cached* `correct`-word
         // codes before falling back to the fuller edit-distance scan over
         // correct + mishears (see docs/research/gap-auto-learned-dictionary.md §2/§3).
@@ -233,7 +233,7 @@ impl DictionaryStore {
     }
 }
 
-/// Two tokens are "close" if identical, phonetically alike (Double Metaphone —
+/// Two tokens are "close" if identical, phonetically alike (Double Metaphone  -
 /// catches mishears that sound right but are spelled very differently), or within
 /// a normalized edit distance of 0.34. The phonetic check is layered on top of the
 /// original edit-distance gate, not a replacement for it.

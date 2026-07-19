@@ -4,19 +4,19 @@
 //! the Hub-facing settings/stats/dictionary functions the Tauri commands call.
 //!
 //! ⚠️ UNVERIFIED: this module was written on macOS, without a Linux machine to build
-//! or run it against, mirroring `crate::win`'s structure (and its own precedent —
+//! or run it against, mirroring `crate::win`'s structure (and its own precedent  -
 //! see that file's doc comment). The shared crates (audio, ASR, cleanup, core) are
 //! cross-platform, but this X11 glue has never been compiled. It is
-//! `cfg(target_os = "linux")` so it does not affect — and is not checked by — the
+//! `cfg(target_os = "linux")` so it does not affect  -  and is not checked by  -  the
 //! macOS build. Treat it as a starting point, not a shipping port.
 //!
 //! Scope and simplifications made in this pass (all documented inline below too):
 //!
-//! - **X11 only — no Wayland.** Hotkeys and window/paste APIs differ completely on
+//! - **X11 only  -  no Wayland.** Hotkeys and window/paste APIs differ completely on
 //!   Wayland (no global key grabs without a compositor-specific global-shortcuts
 //!   portal, no synthetic input without `wlr-virtual-pointer`/`xdg-desktop-portal`
 //!   remote-desktop permission). Wiring the Wayland portal path is explicitly out of
-//!   scope for this pass — **follow-up work**, not attempted here. On a Wayland
+//!   scope for this pass  -  **follow-up work**, not attempted here. On a Wayland
 //!   session this module will simply fail to connect to an X server (unless XWayland
 //!   is active, in which case it will only see X11 clients) and log an error rather
 //!   than silently doing nothing.
@@ -27,7 +27,7 @@
 //!   to get right than the core-protocol `XGrabKey`, so v1 uses `XGrabKey` on a
 //!   single hardcoded key (Right Ctrl, `XK_Control_R`) with `AnyModifier`. The
 //!   trade-off: this key is grabbed *exclusively* for WhimprFlow while held (no other
-//!   app sees it), and only that one physical key works — no chord/remap support.
+//!   app sees it), and only that one physical key works  -  no chord/remap support.
 //!   Good enough as a starting point; XRecord (or the Wayland portal) is the natural
 //!   next step.
 //! - **`xdotool` for paste and foreground-window lookup, not raw XTest/atom queries.**
@@ -40,7 +40,7 @@
 //!   from a doc comment. `xdotool key ctrl+v` is a single well-documented,
 //!   easy-to-verify-by-inspection command, so it was chosen for both the paste step
 //!   and (via `xdotool getactivewindow getwindowclassname`) foreground-app detection
-//!   — one dependency, one failure mode, both readable at a glance. It does mean an
+//!    -  one dependency, one failure mode, both readable at a glance. It does mean an
 //!   `xdotool` binary must be present on the user's system (`apt install xdotool` /
 //!   `dnf install xdotool` / `pacman -S xdotool`); a follow-up could vendor the XTest
 //!   calls directly via `x11rb` to drop that runtime dependency.
@@ -153,12 +153,12 @@ fn emit_bar(state: &'static str) {
     }
 }
 
-/// The focused window's WM_CLASS (e.g. "firefox"), for per-app cleanup formatting —
+/// The focused window's WM_CLASS (e.g. "firefox"), for per-app cleanup formatting  -
 /// the Linux analogue of the macOS bundle id / Windows executable name.
 ///
 /// Pragmatic choice: shells out to `xdotool` (already required for `paste_text`
 /// below) instead of hand-rolling `_NET_ACTIVE_WINDOW` + `WM_CLASS` X11
-/// atom/property queries — see the module doc comment for why. Best-effort: returns
+/// atom/property queries  -  see the module doc comment for why. Best-effort: returns
 /// `None` on any failure (no `xdotool`, no active window, non-EWMH window manager,
 /// Wayland/XWayland oddities, ...) rather than erroring the pipeline.
 fn foreground_app() -> Option<String> {
@@ -193,7 +193,7 @@ pub fn paste_text(text: &str) -> anyhow::Result<()> {
         Ok(status) if status.success() => {}
         Ok(status) => eprintln!("[whimpr:linux] xdotool exited with {status}"),
         Err(e) => eprintln!(
-            "[whimpr:linux] failed to run xdotool ({e}) — install it (apt install xdotool / \
+            "[whimpr:linux] failed to run xdotool ({e})  -  install it (apt install xdotool / \
              dnf install xdotool / pacman -S xdotool) for paste to work"
         ),
     }
@@ -204,7 +204,7 @@ pub fn paste_text(text: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-// ── Cleanup (shared, cross-platform building blocks — copied from `crate::win`) ─
+// ── Cleanup (shared, cross-platform building blocks  -  copied from `crate::win`) ─
 
 fn current_settings_inner() -> whimpr_core::Settings {
     SETTINGS
@@ -318,7 +318,7 @@ fn on_ptt_up() {
     });
 }
 
-// ── X11 global hotkey grab (XGrabKey — see the module doc comment) ─────────────
+// ── X11 global hotkey grab (XGrabKey  -  see the module doc comment) ─────────────
 
 /// Find a keycode that maps to the given keysym by walking the server's keyboard
 /// mapping table. There is no `XKeysymToKeycode` in the async/xcb-style protocol
@@ -355,13 +355,13 @@ fn run_hotkey_loop() -> anyhow::Result<()> {
     let keycode = keycode_for_keysym(&conn, XK_CONTROL_R)
         .ok_or_else(|| anyhow::anyhow!("no keycode maps to XK_Control_R (Right Ctrl) on this keyboard layout"))?;
 
-    // NOTE: unverified against the exact x11rb version pinned here — if `modifiers`
+    // NOTE: unverified against the exact x11rb version pinned here  -  if `modifiers`
     // or `pointer_mode`/`keyboard_mode` don't accept `ModMask::ANY` / `GrabMode::ASYNC`
     // directly, adjust to whatever this crate version's grab_key signature expects.
     conn.grab_key(true, root, ModMask::ANY, keycode, GrabMode::ASYNC, GrabMode::ASYNC)?
         .check()?;
     conn.flush()?;
-    eprintln!("[whimpr:linux] X11 key grab installed (push-to-talk: Right Ctrl, X11 only — see linux.rs doc comment for Wayland)");
+    eprintln!("[whimpr:linux] X11 key grab installed (push-to-talk: Right Ctrl, X11 only  -  see linux.rs doc comment for Wayland)");
 
     loop {
         match conn.wait_for_event()? {
@@ -376,7 +376,7 @@ fn spawn_hotkey_thread() {
     std::thread::spawn(|| {
         if let Err(e) = run_hotkey_loop() {
             eprintln!(
-                "[whimpr:linux] X11 hotkey grab failed: {e} — is a display server reachable? \
+                "[whimpr:linux] X11 hotkey grab failed: {e}  -  is a display server reachable? \
                  This module only supports X11 (or XWayland); Wayland compositors' native \
                  protocol is not supported yet (see the module doc comment)."
             );

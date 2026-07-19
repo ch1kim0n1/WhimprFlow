@@ -23,7 +23,7 @@
 | small q5 | ~9× | ~12× |
 | medium fp16 | ~3.5× | ~5× |
 | large-v3 fp16 | ~1.8× | ~2.6× |
-- **large-v3-turbo**: ~5× faster than large-v3 on the same Mac (OBSERVED whispernotes: MBP M2 processed 10-min audio in 63 s (turbo) vs 316 s (v3), 5.0× speedup). Implies turbo on **M4 base ≈ 10–13× RTF**; on **M4 Pro (20-core GPU) ≈ 20–30× RTF** (INFERRED by scaling GPU cores). 
+- **large-v3-turbo**: ~5× faster than large-v3 on the same Mac (OBSERVED whispernotes: MBP M2 processed 10-min audio in 63 s (turbo) vs 316 s (v3), 5.0× speedup). Implies turbo on **M4 base ≈ 10–13× RTF**; on **M4 Pro (20-core GPU) ≈ 20–30× RTF** (INFERRED by scaling GPU cores).
 - OBSERVED corroboration: M2 Pro large-v3-turbo Metal + **flash attention** processes 60 s audio in ~2.8 s (~21× RTF). M4 Pro should exceed this.
 - OBSERVED (mac-whisper-speedtest, **M4 Pro 24 GB**, short "large" clip, single run): whisper.cpp = **1.2293 s** (vs parakeet-mlx 0.4995 s, fluidaudio-coreml 0.1935 s, mlx-whisper 1.0230 s, whisperkit 2.2190 s, faster-whisper 6.9613 s). Note this test's whisper.cpp used large-v3-turbo-q5_0 + CoreML + 4 threads.
 
@@ -41,7 +41,7 @@
 
 **Architecture:** FastConformer encoder + **TDT (Token-and-Duration Transducer)** decoder, 600M params. Punctuation + capitalization + word/segment/char timestamps built in. Single-pass up to 24 min (full attention) / 3 hr (local attention). OBSERVED (nvidia HF cards).
 
-**Accuracy:** 
+**Accuracy:**
 - **v2 (English-only)**: **#1 on HF Open-ASR Leaderboard, 6.05% avg WER**, RTFx **3380** (batch=128, server GPU). Released 2025-05-01. OBSERVED.
 - **v3 (25 European langs incl. EN)**: Open-ASR avg **6.34% WER**, RTFx 3332.74; English Fleurs 4.85% / CoVoST 6.80%. OBSERVED (nvidia HF v3 card).
 - On **Apple Silicon via FluidAudio** (real-device): v2 LibriSpeech-clean **2.1% WER**; v3 English-US **5.4% WER**. OBSERVED (FluidAudio Benchmarks.md).
@@ -111,7 +111,7 @@
 
 **Throughput:** H100 = 400 realtime streams; L40S = 64 streams @ RTF 3×. OBSERVED.
 
-**Apple Silicon:** **`moshi-mlx` ≥ 0.2.6** runs on Mac (tested M3 MBP); 1B tested on iPhone 16 Pro via `moshi-swift`. **No published M-series RTF number**  -  a big data gap; the 2.6B model at 2.5 s delay is heavy for 24 GB + snappy dictation. INFERRED: 1B model on M4 Pro should run >1× realtime but Python/MLX or Swift-Moshi integration is less mature than WhisperKit/FluidAudio. 
+**Apple Silicon:** **`moshi-mlx` ≥ 0.2.6** runs on Mac (tested M3 MBP); 1B tested on iPhone 16 Pro via `moshi-swift`. **No published M-series RTF number**  -  a big data gap; the 2.6B model at 2.5 s delay is heavy for 24 GB + snappy dictation. INFERRED: 1B model on M4 Pro should run >1× realtime but Python/MLX or Swift-Moshi integration is less mature than WhisperKit/FluidAudio.
 
 **License:** weights **CC-BY-4.0**; code MIT (Python) / Apache-2.0 (Rust). OBSERVED.
 

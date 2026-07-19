@@ -1,6 +1,6 @@
 //! Cloud cleanup providers. The OpenAI provider (default cloud) sends the shared
 //! WhimprFlow system prompt plus the assembled context and returns cleaned text.
-//! On any failure the caller falls back to the raw transcript — cleanup is an
+//! On any failure the caller falls back to the raw transcript  -  cleanup is an
 //! enhancement, never a gate.
 
 use std::time::Duration;
@@ -12,7 +12,7 @@ use whimpr_core::cleanup::{
 /// Default OpenAI Chat Completions endpoint.
 const OPENAI_DEFAULT_URL: &str = "https://api.openai.com/v1/chat/completions";
 
-/// Cleanup via the OpenAI Chat Completions API — or any OpenAI-compatible
+/// Cleanup via the OpenAI Chat Completions API  -  or any OpenAI-compatible
 /// endpoint (OpenRouter, a local server, etc.) when `base_url` is set.
 /// OpenRouter in particular speaks this exact wire format at
 /// `https://openrouter.ai/api/v1/chat/completions`.

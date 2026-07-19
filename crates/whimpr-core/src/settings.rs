@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::cleanup::CleanupLevel;
 
 /// How formal the cleaned-up text should read. `Neutral` (the default) adds no
-/// steering at all — the cleanup prompt's own defaults apply.
+/// steering at all  -  the cleanup prompt's own defaults apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Formality {
@@ -25,7 +25,7 @@ pub const MAX_STYLE_INSTRUCTIONS_LEN: usize = 600;
 /// A user's personal writing style, applied to cleanup output as PRESENTATION
 /// guidance only: it changes how the already-spoken words are shaped (tone,
 /// formality, a free-text note), never what they say. The cleanup engine's
-/// "never invent facts, greetings, or sign-offs" contract still holds — style
+/// "never invent facts, greetings, or sign-offs" contract still holds  -  style
 /// only picks among ways to present the real words.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct StyleProfile {
@@ -80,7 +80,7 @@ impl StyleProfile {
 pub enum CleanupMode {
     /// Paste the raw transcript (no cleanup).
     Raw,
-    /// Local on-device model (default — works offline, no API key).
+    /// Local on-device model (default  -  works offline, no API key).
     #[default]
     Local,
     /// OpenAI cloud.
@@ -90,7 +90,7 @@ pub enum CleanupMode {
 }
 
 /// One bindable key: the letters/digits the rebindable shortcuts actually use,
-/// plus Escape for Cancel. Deliberately not a general keyboard-event type —
+/// plus Escape for Cancel. Deliberately not a general keyboard-event type  -
 /// bounded to what this app's rebindable actions need, which keeps the
 /// per-platform native-keycode lookup a small, exhaustively-checkable table
 /// instead of a full OS keycode enum.
@@ -105,8 +105,8 @@ pub enum Key {
 /// A modifier chord bound to one rebindable action, checked on a plain KeyDown
 /// (not a hold gesture like push-to-talk). Field names describe the physical
 /// key on each platform: `meta` = Cmd (macOS) / Win key (Windows); `alt` =
-/// Option (macOS) / Alt (Windows). All four must match exactly — no
-/// "at-least-these" matching — so a chord with no modifiers (like the default
+/// Option (macOS) / Alt (Windows). All four must match exactly  -  no
+/// "at-least-these" matching  -  so a chord with no modifiers (like the default
 /// Cancel = bare Escape) can't accidentally also fire with modifiers held.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Chord {
@@ -122,7 +122,7 @@ impl Chord {
         Self { meta, ctrl, alt, shift, key }
     }
 
-    /// No modifiers held at all — used for Cancel's bare-Escape default and to
+    /// No modifiers held at all  -  used for Cancel's bare-Escape default and to
     /// reject a would-be binding that's just a plain letter with nothing held
     /// (would collide with normal typing).
     pub fn has_any_modifier(&self) -> bool {
@@ -133,10 +133,10 @@ impl Chord {
 /// The user's bindings for the shortcuts that are safe to rebind: a single
 /// modifier-chord checked on an ordinary KeyDown event. Push-to-talk,
 /// hands-free lock (double-tap push-to-talk), and Command Mode are
-/// deliberately NOT here — push-to-talk/hands-free are tied to the platform's
+/// deliberately NOT here  -  push-to-talk/hands-free are tied to the platform's
 /// special "hold key" gesture (Fn on macOS / Right Ctrl on Windows) and
 /// Command Mode either rides that same gesture (macOS: Fn+Ctrl) or is a
-/// not-yet-implemented stub (Windows) — none of the three fit the
+/// not-yet-implemented stub (Windows)  -  none of the three fit the
 /// chord-on-keydown model these four do. The Shortcuts UI shows all of them,
 /// but only these four have a "change" button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
