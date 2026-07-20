@@ -264,14 +264,38 @@ pub fn backup_data() -> Result<String, String> {
 fn whisper_model_path(language: Option<&str>) -> std::path::PathBuf {
     let dir = support_dir().join("models");
     let needs_multilingual = matches!(language, Some(lang) if lang != "en");
-    const MULTILINGUAL: &[&str] = &["ggml-medium.bin", "ggml-small.bin", "ggml-base.bin"];
-    const ENGLISH_FIRST: &[&str] = &[
-        "ggml-medium.en.bin",
-        "ggml-small.en.bin",
-        "ggml-base.en.bin",
+    const MULTILINGUAL: &[&str] = &[
         "ggml-medium.bin",
+        "ggml-medium-q8_0.bin",
         "ggml-small.bin",
+        "ggml-small-q8_0.bin",
         "ggml-base.bin",
+        "ggml-base-q8_0.bin",
+    ];
+    // "ggml-distil-large-v3.5.bin": rename after downloading from
+    // distil-whisper/distil-large-v3.5-ggml (ships as generic
+    // "ggml-model.bin"). Same weight class as medium.en but distilled from
+    // large-v3: meaningfully more accurate, ~4x faster than large-v2;
+    // English-only. "ggml-medium-32-2.en.bin" / "ggml-distil-small.en.bin"
+    // are distil-whisper's medium.en/small.en distillations - same accuracy
+    // class, faster. "-q8_0" files are 8-bit quantized ggml weights:
+    // near-lossless WER, roughly half the file size of the full model.
+    const ENGLISH_FIRST: &[&str] = &[
+        "ggml-distil-large-v3.5.bin",
+        "ggml-medium-32-2.en.bin",
+        "ggml-medium.en.bin",
+        "ggml-medium.en-q8_0.bin",
+        "ggml-distil-small.en.bin",
+        "ggml-small.en.bin",
+        "ggml-small.en-q8_0.bin",
+        "ggml-base.en.bin",
+        "ggml-base.en-q8_0.bin",
+        "ggml-medium.bin",
+        "ggml-medium-q8_0.bin",
+        "ggml-small.bin",
+        "ggml-small-q8_0.bin",
+        "ggml-base.bin",
+        "ggml-base-q8_0.bin",
     ];
     if needs_multilingual {
         for name in MULTILINGUAL {
@@ -297,7 +321,7 @@ fn whisper_model_path(language: Option<&str>) -> std::path::PathBuf {
             return p;
         }
     }
-    dir.join(ENGLISH_FIRST.last().copied().unwrap_or("ggml-base.en.bin"))
+    dir.join("ggml-base.en.bin")
 }
 
 fn unix_now() -> u64 {
