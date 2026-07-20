@@ -281,18 +281,40 @@ mod imp {
         let needs_multilingual = matches!(language, Some(lang) if lang != "en");
         const MULTILINGUAL: &[&str] = &[
             "ggml-large-v3-turbo.bin",
+            "ggml-large-v3-turbo-q8_0.bin",
             "ggml-medium.bin",
+            "ggml-medium-q8_0.bin",
             "ggml-small.bin",
+            "ggml-small-q8_0.bin",
             "ggml-base.bin",
+            "ggml-base-q8_0.bin",
         ];
+        // "ggml-distil-large-v3.5.bin": rename after downloading from
+        // distil-whisper/distil-large-v3.5-ggml (ships as generic
+        // "ggml-model.bin"). ~1.5x faster than large-v3-turbo with better
+        // short-form WER (slightly worse long-form); English-only.
+        // "ggml-medium-32-2.en.bin" / "ggml-distil-small.en.bin" are
+        // distil-whisper's medium.en/small.en distillations - same accuracy
+        // class, faster. "-q8_0" files are 8-bit quantized ggml weights:
+        // near-lossless WER, roughly half the file size of the full model.
         const ENGLISH_FIRST: &[&str] = &[
+            "ggml-distil-large-v3.5.bin",
             "ggml-large-v3-turbo.bin",
+            "ggml-large-v3-turbo-q8_0.bin",
+            "ggml-medium-32-2.en.bin",
             "ggml-medium.en.bin",
+            "ggml-medium.en-q8_0.bin",
+            "ggml-distil-small.en.bin",
             "ggml-small.en.bin",
+            "ggml-small.en-q8_0.bin",
             "ggml-base.en.bin",
+            "ggml-base.en-q8_0.bin",
             "ggml-medium.bin",
+            "ggml-medium-q8_0.bin",
             "ggml-small.bin",
+            "ggml-small-q8_0.bin",
             "ggml-base.bin",
+            "ggml-base-q8_0.bin",
         ];
         if needs_multilingual {
             for name in MULTILINGUAL {
@@ -318,7 +340,7 @@ mod imp {
                 return p;
             }
         }
-        dir.join(ENGLISH_FIRST.last().copied().unwrap_or("ggml-base.en.bin"))
+        dir.join("ggml-base.en.bin")
     }
 
     fn support_dir() -> PathBuf {
