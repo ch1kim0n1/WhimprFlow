@@ -43,10 +43,15 @@ jobs:
 
       # Drafts make every tagged build reviewable before a human publishes it.
       # Signing and notarization credentials can be added as repository secrets later.
+      # tauri.conf.json points at a self-signed "WhimprFlow Dev" identity for LOCAL
+      # builds (so TCC persists privacy grants across rebuilds  -  see
+      # src-tauri/setup-signing.sh). CI runners don't have that cert, so fall back
+      # to ad-hoc signing here. A future Developer ID secret can override both.
       - name: Build and upload draft release assets
         uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: "-"
         with:
           projectPath: ui
           tauriScript: npm exec tauri

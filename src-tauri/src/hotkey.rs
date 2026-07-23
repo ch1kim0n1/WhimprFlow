@@ -192,6 +192,23 @@ mod imp {
     static PARTIAL_GEN: AtomicU64 = AtomicU64::new(0);
     /// Guards that only one partial transcription runs at a time.
     static PARTIAL_BUSY: AtomicBool = AtomicBool::new(false);
+    /// True while the ASR model is loading on a background thread  -  prevents
+    /// repeated Fn presses from spawning concurrent load threads before the
+    /// first one finishes (lazy load: the model is no longer preloaded at
+    /// startup, so the first dictation kicks off the load).
+    static ASR_LOADING: AtomicBool = AtomicBool::new(false);
+    /// True while the local LLM worker is spawning  -  same race guard as
+    /// [`ASR_LOADING`] but for the cleanup worker. The worker is lazy now: it
+    /// only starts when cleanup mode is Local (or a cloud provider falls back
+    /// to local), and an idle timeout unloads it to release RAM.
+    static LOCAL_LOADING: AtomicBool = AtomicBool::new(false);
+    /// Monotonic-ms timestamp of the last local-worker use  -  drives the idle
+    /// unload timeout. `0` means "not in use / not yet loaded".
+    static LAST_LOCAL_USE: AtomicU64 = AtomicU64::new(0);
+    /// Local LLM worker idle timeout: unload the child process (and its loaded
+    /// model) after this many minutes without a cleanup request, so the app
+    /// stops holding ~1-2.5 GB of RAM while the user isn't dictating.
+    const LOCAL_IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
     /// The Context Capsule captured at the most recent record-start (Fn down),
     /// or `None` when the capsule was disabled / not applicable for that app.
     static LAST_CAPSULE: OnceLock<Mutex<Option<Capsule>>> = OnceLock::new();
@@ -758,19 +775,38 @@ mod imp {
         if loaded.as_deref() == Some(target_name.as_str()) {
             return; // the loaded model is already the best fit
         }
+        // Don't spawn a second load while one is already in flight (lazy load
+        // means the first Fn press kicks this off; repeated presses mustn't
+        // queue redundant load threads).
+        if ASR_LOADING.swap(true, Ordering::SeqCst) {
+            return;
+        }
         eprintln!(
             "[whimpr] ASR model change: {}  ->  {target_name} (loading in the background)",
             loaded.as_deref().unwrap_or("<none>")
         );
-        std::thread::spawn(move || match whimpr_asr::WhisperEngine::load(&target) {
-            Ok(engine) => {
-                set_asr(Arc::new(engine), target_name.clone());
-                eprintln!("[whimpr] ASR model swapped in: {target_name}");
+        std::thread::spawn(move || {
+            match whimpr_asr::WhisperEngine::load(&target) {
+                Ok(engine) => {
+                    set_asr(Arc::new(engine), target_name.clone());
+                    eprintln!("[whimpr] ASR model swapped in: {target_name}");
+                }
+                Err(e) => {
+                    eprintln!("[whimpr] ASR hot-reload failed ({e})  -  keeping the current model")
+                }
             }
-            Err(e) => {
-                eprintln!("[whimpr] ASR hot-reload failed ({e})  -  keeping the current model")
-            }
+            ASR_LOADING.store(false, Ordering::SeqCst);
         });
+    }
+
+    /// Kick off the ASR model load if it hasn't been loaded yet. Called at
+    /// record-start (Fn down) so the model begins loading the moment the user
+    /// first dictates  -  by the time a short utterance finishes, the model is
+    /// usually ready. No-op once loaded or while a load is in flight. This is
+    /// the lazy-load entry point: the model is NOT preloaded at startup.
+    fn ensure_asr_loaded() {
+        let language = current_settings().language;
+        maybe_reload_asr(language.as_deref());
     }
 
     /// (Re)build the cloud cleanup providers from the current keys + settings. Called
@@ -802,6 +838,58 @@ mod imp {
             None => {
                 let _ = ANTHROPIC.set(Mutex::new(anthropic));
             }
+        }
+    }
+
+    /// Spawn the local LLM cleanup worker if it isn't running yet (and no spawn
+    /// is already in flight). Lazy: the worker is NOT started at startup  -  it
+    /// only comes up when cleanup mode is Local (or a cloud provider falls back
+    /// to local), so the app doesn't pin ~1-2.5 GB of RAM for a model the user
+    /// may never invoke. Bumps the idle-use timestamp so the unload timer
+    /// doesn't immediately reap a freshly spawned worker.
+    fn ensure_local_worker() {
+        let Some(slot) = LOCAL.get() else {
+            return;
+        };
+        if slot.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+            LAST_LOCAL_USE.store(now_ms(), Ordering::SeqCst);
+            return;
+        }
+        if LOCAL_LOADING.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        std::thread::spawn(|| {
+            let worker = crate::local_llm::spawn_default();
+            if let Some(slot) = LOCAL.get() {
+                *slot.lock().unwrap_or_else(|e| e.into_inner()) = worker;
+            }
+            LAST_LOCAL_USE.store(now_ms(), Ordering::SeqCst);
+            LOCAL_LOADING.store(false, Ordering::SeqCst);
+        });
+    }
+
+    /// Drop the local LLM worker (killing the child process and freeing its
+    /// loaded model) if it has been idle longer than [`LOCAL_IDLE_TIMEOUT`].
+    /// Called periodically from the idle-reaper thread started in [`install`].
+    fn reap_idle_local_worker() {
+        let last = LAST_LOCAL_USE.load(Ordering::SeqCst);
+        if last == 0 {
+            return;
+        }
+        if now_ms().saturating_sub(last) < LOCAL_IDLE_TIMEOUT.as_millis() as u64 {
+            return;
+        }
+        let Some(slot) = LOCAL.get() else {
+            return;
+        };
+        let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_some() {
+            eprintln!(
+                "[whimpr] local LLM worker idle > {}min  -  unloading to free RAM",
+                LOCAL_IDLE_TIMEOUT.as_secs() / 60
+            );
+            *guard = None; // Drop: kills the child process + releases the model.
+            LAST_LOCAL_USE.store(0, Ordering::SeqCst);
         }
     }
 
@@ -882,12 +970,15 @@ mod imp {
             code_mode,
         };
         // Run the on-device model with the same prompt + per-app formatting.
+        // Bumps the idle-use timestamp so the unload timer doesn't reap the
+        // worker while it's actively serving cleanups.
         let run_local = || -> Option<anyhow::Result<String>> {
             LOCAL.get().and_then(|m| {
                 m.lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .as_mut()
                     .map(|w| {
+                        LAST_LOCAL_USE.store(now_ms(), Ordering::SeqCst);
                         // System prompt + few-shot demonstration turns + the transcript,
                         // so the on-device model actually produces newlines/lists and
                         // resolves self-corrections instead of just being told to.
@@ -919,6 +1010,9 @@ mod imp {
                     match cloud {
                         Some(r) => (Some(r), format!("openai:{}", settings.openai_model), true),
                         None => {
+                            // Cloud key missing: fall back to the local worker.
+                            // Spawn it lazily so the next fallback has it warm.
+                            ensure_local_worker();
                             let r = run_local();
                             let route = local_route(&r);
                             (r, route, false)
@@ -937,6 +1031,7 @@ mod imp {
                             true,
                         ),
                         None => {
+                            ensure_local_worker();
                             let r = run_local();
                             let route = local_route(&r);
                             (r, route, false)
@@ -944,6 +1039,11 @@ mod imp {
                     }
                 }
                 CleanupMode::Local => {
+                    // Lazy spawn: the worker only comes up when Local mode
+                    // actually needs it. The first cleanup after launch (or
+                    // after an idle unload) may fall back to raw if the spawn
+                    // hasn't finished yet; subsequent ones are fast.
+                    ensure_local_worker();
                     let r = run_local();
                     let route = local_route(&r);
                     (r, route, false)
@@ -1586,6 +1686,15 @@ mod imp {
             // Runs off the tap thread so the mic-permission prompt can't stall keys.
             Action::StartCapture { .. } => {
                 SESSION_LOCKED.store(false, Ordering::SeqCst);
+                // Lazy model load: kick off the ASR engine (and, in Local
+                // cleanup mode, the local LLM worker) the moment the user
+                // presses Fn. By the time a short utterance finishes the
+                // model is usually warm; if not, this dictation finalizes as
+                // raw and the next one is fast. Keeps RAM flat at rest.
+                ensure_asr_loaded();
+                if matches!(current_settings().cleanup_mode, CleanupMode::Local) {
+                    ensure_local_worker();
+                }
                 // Sample the partial generation NOW, on the tap thread: both
                 // stop paths (finalize/discard) bump it before take()ing the
                 // slot, so a quick tap or cancel that outraces the (possibly
@@ -2231,16 +2340,15 @@ mod imp {
         let _ = CLOCK.set(Instant::now());
 
         // Load settings + dictionary, and build cloud providers from stored keys.
-        // Loaded synchronously (cheap file read) before the ASR thread below so
-        // `model_path()` can pick an English-only vs. multilingual model file
-        // based on the configured language.
+        // Loaded synchronously (cheap file read) before anything else so the
+        // lazy ASR load (triggered on the first Fn press) can pick an
+        // English-only vs. multilingual model file based on the language.
         let settings = whimpr_core::Settings::load(&settings_path());
         let dict = whimpr_core::DictionaryStore::load(&dict_path());
         eprintln!(
             "[whimpr] cleanup mode: {:?}, level: {:?}, language: {:?}",
             settings.cleanup_mode, settings.cleanup_level, settings.language
         );
-        let language_for_model = settings.language.clone();
         let retention_days = settings.retention_days;
         let _ = SETTINGS.set(Mutex::new(settings));
         let _ = DICTIONARY.set(Mutex::new(dict));
@@ -2283,32 +2391,23 @@ mod imp {
             }
         }
 
-        // Load the speech-to-text model off the main thread (it takes ~1s).
-        std::thread::spawn(move || {
-            let path = model_path(language_for_model.as_deref());
-            if !path.exists() {
-                eprintln!("[whimpr] ASR model not found at {}", path.display());
-                return;
-            }
-            match whimpr_asr::WhisperEngine::load(&path) {
-                Ok(engine) => {
-                    // Remember which model file loaded (provenance + health chips).
-                    let name = path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    set_asr(Arc::new(engine), name);
-                    eprintln!("[whimpr] ASR model loaded  -  ready to transcribe");
-                }
-                Err(e) => eprintln!("[whimpr] ASR model load failed: {e}"),
-            }
-        });
+        // ASR + local LLM models are NOT preloaded. Both are lazy: the whisper
+        // engine loads on the first Fn press (see `ensure_asr_loaded` at
+        // StartCapture), and the local cleanup worker spawns only when cleanup
+        // mode is Local (or a cloud provider falls back to local). This keeps
+        // the app lightweight at rest  -  no ~1-2.5 GB pinned for models the
+        // user may never invoke  -  which was causing memory-pressure warnings
+        // on MacBook Airs.
+        // Initialize the LOCAL slot empty so `ensure_local_worker` can mutate
+        // it (OnceLock can only be set once; later spawns swap the inner value).
+        let _ = LOCAL.set(Mutex::new(None));
 
-        // Start the local cleanup worker in the background (model load takes a few
-        // seconds; the first local cleanup waits for it, subsequent ones are fast).
-        std::thread::spawn(|| {
-            let worker = crate::local_llm::spawn_default();
-            let _ = LOCAL.set(Mutex::new(worker));
+        // Idle reaper: drop the local LLM worker after LOCAL_IDLE_TIMEOUT of
+        // inactivity so its child process + loaded model release their RAM.
+        // The worker respawns lazily on the next Local cleanup.
+        std::thread::spawn(|| loop {
+            std::thread::sleep(Duration::from_secs(60));
+            reap_idle_local_worker();
         });
 
         // Accessibility is the ONE permission that makes the Fn CGEventTap global AND
