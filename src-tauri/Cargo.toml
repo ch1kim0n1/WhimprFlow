@@ -26,6 +26,8 @@ tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-ap
 tauri-plugin-updater = "2"
 # relaunch after a successful update (used by the Hub "Check for updates" flow).
 tauri-plugin-process = "2"
+# Start WhimprFlow when the user logs in (Settings toggle).
+tauri-plugin-autostart = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

@@ -472,9 +472,8 @@ pub fn paste_text(text: &str) -> anyhow::Result<()> {
         ),
     }
     std::thread::sleep(Duration::from_millis(150));
-    if let Some(prev) = saved {
-        let _ = cb.set_text(prev);
-    }
+    crate::paste::restore_clipboard_after_paste(&mut cb, saved);
+    crate::feedback::play_complete();
     Ok(())
 }
 
@@ -980,7 +979,7 @@ fn finalize_transcript(
     // Meeting mode: a locked (hands-free) session's transcript becomes a
     // note instead of a paste.
     if settings.meeting_mode && was_locked {
-        crate::notes::add(local_datetime_title(), text.clone(), None);
+        let _ = crate::notes::add(local_datetime_title(), text.clone(), None);
         record_dictation(
             &text,
             &raw_out,
@@ -1110,7 +1109,7 @@ fn deliver_workflow(
             }
         }
         WorkflowDestination::Note => {
-            crate::notes::add(name.to_string(), text.clone(), None);
+            let _ = crate::notes::add(name.to_string(), text.clone(), None);
             (true, "noted", None)
         }
     };
@@ -1179,14 +1178,17 @@ fn on_ptt_down() {
     // text while recording. Upgrade path: mirror hotkey.rs's spawn_partial_loop
     // (CaptureHandle::snapshot + transcribe_opts every ~1.2 s) once this module
     // can be compiled and profiled on Linux hardware.
-    std::thread::spawn(|| match whimpr_audio::start(|_: &[f32]| {}) {
-        Ok(handle) => {
-            *CAPTURE
-                .get_or_init(|| Mutex::new(None))
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = Some(handle);
+    std::thread::spawn(|| {
+        let device = current_settings_inner().input_device.clone();
+        match whimpr_audio::start_named(device, |_: &[f32]| {}) {
+            Ok(handle) => {
+                *CAPTURE
+                    .get_or_init(|| Mutex::new(None))
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(handle);
+            }
+            Err(e) => tracing::info!(target: "whimpr", "[whimpr:linux] mic capture failed: {e}"),
         }
-        Err(e) => tracing::info!(target: "whimpr", "[whimpr:linux] mic capture failed: {e}"),
     });
 }
 
@@ -1263,12 +1265,13 @@ fn finish_capture_and_finalize(was_locked: bool) {
         let pcm = whimpr_audio::resample_to_16k(&res.samples, res.sample_rate);
         // An English-only (.en) model always gets "en", never auto-detect.
         let lang = effective_language(settings.language.as_deref());
-        match asr.transcribe_opts(&pcm, lang.as_deref(), long_form) {
+        match asr.transcribe_opts_ex(&pcm, lang.as_deref(), long_form, settings.auto_punctuate) {
             Ok(t) => {
-                tracing::info!(target: "whimpr", "[whimpr:linux] TRANSCRIPT: \"{}\"", t.text);
+                let text = whimpr_core::strip_fillers(&t.text, &settings.custom_fillers);
+                tracing::info!(target: "whimpr", "[whimpr:linux] TRANSCRIPT: \"{text}\"");
                 finalize_transcript(
                     app,
-                    t.text,
+                    text,
                     t.confidence,
                     t.low_words,
                     res.duration_secs(),
@@ -1395,11 +1398,21 @@ fn run_hotkey_loop() -> anyhow::Result<()> {
 fn spawn_hotkey_thread() {
     std::thread::spawn(|| {
         if let Err(e) = run_hotkey_loop() {
-            tracing::info!(target: "whimpr",
+            tracing::warn!(target: "whimpr",
                 "[whimpr:linux] X11 hotkey grab failed: {e}  -  is a display server reachable? \
                  This module only supports X11 (or XWayland); Wayland compositors' native \
-                 protocol is not supported yet (see the module doc comment)."
+                 protocol is not supported yet (see docs/LINUX-WAYLAND.md)."
             );
+            if let Some(app) = APP.get() {
+                use tauri::Emitter;
+                let _ = app.emit(
+                    "whimpr://linux/hotkeys-unavailable",
+                    format!(
+                        "Global hotkeys need X11 or XWayland ({e}). \
+                         Dictation from the Hub still works; see docs/LINUX-WAYLAND.md."
+                    ),
+                );
+            }
         }
     });
 }
@@ -1515,6 +1528,19 @@ pub fn install(app: AppHandle) {
             tracing::info!(target: "whimpr", "[whimpr:linux] ASR model not found at {}", path.display());
             return;
         }
+        if let Err(e) = whimpr_core::model_magic::validate_whisper_model(&path) {
+            tracing::error!(target: "whimpr", "[whimpr:linux] ASR model rejected: {e}");
+            if let Some(app) = APP.get() {
+                let _ = app.emit(
+                    "whimpr://model/corrupt",
+                    serde_json::json!({
+                        "path": path.display().to_string(),
+                        "error": e.to_string(),
+                    }),
+                );
+            }
+            return;
+        }
         match whimpr_asr::WhisperEngine::load(&path) {
             Ok(engine) => {
                 // Remember which model file loaded (provenance + health chips).
@@ -1542,6 +1568,12 @@ pub fn install(app: AppHandle) {
 /// A snapshot of the current settings.
 pub fn current_settings() -> whimpr_core::Settings {
     current_settings_inner()
+}
+
+/// Initialize settings OnceLock for smoke / unit tests (no Tauri AppHandle).
+pub fn bootstrap_for_tests() {
+    let settings = whimpr_core::Settings::load(&settings_path());
+    let _ = SETTINGS.set(Mutex::new(settings));
 }
 
 /// Apply new settings and rebuild the cloud providers (picks up model
@@ -1715,6 +1747,7 @@ pub fn dictionary_remove(correct: &str) -> Result<(), String> {
 }
 
 /// Add an AUTO-learned entry and persist. Marked ✨ auto in the UI.
+#[allow(dead_code)] // IPC parity with macOS; auto-learn observer is macOS-first
 pub fn dictionary_learn(correct: String, mishears: Vec<String>) {
     if let Some(m) = DICTIONARY.get() {
         let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
@@ -1911,12 +1944,16 @@ pub fn get_pending() -> Option<crate::hotkey::PendingPayload> {
 /// raw `_NET_ACTIVE_WINDOW` client message via x11rb) against the stored
 /// `target_app` WM_CLASS, then poll `foreground_app()` until it matches
 /// before pasting  -  mirroring macOS's `appctx::activate_app`.
-pub fn approve_pending() {
-    let item = PENDING
-        .get()
-        .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).take());
+pub fn approve_pending() -> Result<(), String> {
+    let item = match PENDING.get() {
+        Some(m) => m
+            .lock()
+            .map_err(|e| format!("pending lock poisoned: {e}"))?
+            .take(),
+        None => None,
+    };
     let (Some(item), Some(app)) = (item, APP.get()) else {
-        return;
+        return Ok(());
     };
     let mut destination = item.destination;
     let mut note = None;
@@ -1940,13 +1977,16 @@ pub fn approve_pending() {
         item.duration_secs,
         note,
     );
+    Ok(())
 }
 
 /// Discard the held workflow result without executing it.
-pub fn reject_pending() {
+pub fn reject_pending() -> Result<(), String> {
     if let Some(m) = PENDING.get() {
-        *m.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *m.lock()
+            .map_err(|e| format!("pending lock poisoned: {e}"))? = None;
     }
+    Ok(())
 }
 
 /// Append one learned correction to Voice Memory and persist (encrypted).
@@ -1999,14 +2039,15 @@ pub fn export_voice_memory() -> Result<String, String> {
 }
 
 /// Wipe the correction log (the dictionary itself is managed separately).
-pub fn clear_voice_memory() {
+pub fn clear_voice_memory() -> Result<(), String> {
     if let Some(m) = VOICE_MEMORY.get() {
         m.lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .map_err(|e| format!("voice memory lock poisoned: {e}"))?
             .corrections
             .clear();
     }
     save_voice_memory();
+    Ok(())
 }
 
 /// Screen capture is macOS-only this pass.

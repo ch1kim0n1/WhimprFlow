@@ -30,5 +30,12 @@ sudo apt install xdotool   # Debian/Ubuntu
 sudo apt install build-essential pkg-config cmake libclang-dev \
   libdbus-1-dev libssl-dev libasound2-dev \
   libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-  librsvg2-dev patchelf libx11-dev libxcb1-dev
+  librsvg2-dev patchelf libx11-dev libxcb1-dev \
+  libxkbcommon-dev libxrandr-dev
 ```
+
+## Hub banner
+
+When the X11 hotkey grab fails (typical on pure Wayland), the shell emits
+`whimpr://linux/hotkeys-unavailable`. The Hub shows a banner explaining that
+global push-to-talk is disabled; dictation from the Hub UI still works.

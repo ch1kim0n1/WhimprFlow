@@ -21,16 +21,25 @@ import { Walkthrough, shouldShowWalkthrough } from "./Walkthrough";
 import { gsap, prefersReduced, EASE } from "./anim";
 import {
   dismissSafeMode,
+  getBuildInfo,
+  getChangelog,
+  getPreviousVersion,
   getSettings,
   setSettings,
   getStatus,
   hubReady,
   onCloudUnavailable,
+  onLinuxHotkeysUnavailable,
   onSafeMode,
+  relaunchAfterUpdate,
+  rollbackToPreviousVersion,
   type Settings,
   type Status,
   DEFAULT_SETTINGS,
 } from "./api";
+import { toast } from "./Toast";
+import { KeyboardCheatsheet } from "./KeyboardCheatsheet";
+import { listen } from "@tauri-apps/api/event";
 
 // Wraps the routed pane. Remounted per navigation (key={page}), so each page
 // arrival plays a GSAP enter-cascade: the pane's own sections stagger up. Home
@@ -76,7 +85,12 @@ export function App() {
     has_anthropic_key: false,
   });
   const [cloudBanner, setCloudBanner] = useState<string | null>(null);
+  const [hotkeysBanner, setHotkeysBanner] = useState<string | null>(null);
   const [safeMode, setSafeMode] = useState(false);
+  const [previousVersion, setPreviousVersion] = useState<string | null>(null);
+  const [rollingBack, setRollingBack] = useState(false);
+  const [cheatsheet, setCheatsheet] = useState(false);
+  const [whatsNew, setWhatsNew] = useState<string | null>(null);
 
   const refresh = () => getStatus().then(setStatus);
 
@@ -84,17 +98,68 @@ export function App() {
     getSettings().then(setLocalSettings);
     refresh();
     void hubReady();
+    void getPreviousVersion().then(setPreviousVersion);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [s, info, log] = await Promise.all([getSettings(), getBuildInfo(), getChangelog()]);
+      if (cancelled) return;
+      if (info.version && s.last_seen_version !== info.version) {
+        setWhatsNew(log);
+        const next = { ...s, last_seen_version: info.version };
+        setLocalSettings(next);
+        void setSettings(next);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || t?.isContentEditable) return;
+      if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+        e.preventDefault();
+        setCheatsheet(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void listen<string>("whimpr://navigate", (e) => {
+      const p = e.payload;
+      if (
+        p === "settings" ||
+        p === "home" ||
+        p === "shortcuts" ||
+        p === "help" ||
+        p === "account"
+      ) {
+        setPage(p);
+      }
+    }).then((fn) => {
+      un = fn;
+    });
+    return () => un?.();
   }, []);
 
   useEffect(() => {
     let un: (() => void) | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     void onCloudUnavailable((msg) => {
-      setCloudBanner(
-        msg?.trim()
-          ? msg
-          : "Cloud cleanup was unavailable — your last dictation was pasted raw. Check your API key and network.",
-      );
+      const text = msg?.trim()
+        ? msg
+        : "Cloud cleanup was unavailable — your last dictation was pasted raw. Check your API key and network.";
+      setCloudBanner(text);
+      toast.error(text);
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => setCloudBanner(null), 10_000);
     }).then((fn) => {
@@ -104,6 +169,19 @@ export function App() {
       un?.();
       if (timer) clearTimeout(timer);
     };
+  }, []);
+
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void onLinuxHotkeysUnavailable((msg) => {
+      setHotkeysBanner(
+        msg?.trim() ||
+          "Global hotkeys are unavailable on this Wayland session. Use the Hub to dictate, or switch to X11.",
+      );
+    }).then((fn) => {
+      un = fn;
+    });
+    return () => un?.();
   }, []);
 
   useEffect(() => {
@@ -145,11 +223,36 @@ export function App() {
         background: theme.pageBg,
       }}
     >
+      <a
+        href="#hub-main"
+        style={{
+          position: "absolute",
+          left: -9999,
+          top: 8,
+          zIndex: 3000,
+          padding: "8px 12px",
+          background: theme.solidBg,
+          color: theme.solidText,
+          borderRadius: 8,
+          textDecoration: "none",
+          fontSize: 13,
+          fontWeight: 650,
+        }}
+        onFocus={(e) => {
+          e.currentTarget.style.left = "12px";
+        }}
+        onBlur={(e) => {
+          e.currentTarget.style.left = "-9999px";
+        }}
+      >
+        Skip to content
+      </a>
       <Sidebar page={page} setPage={setPage} collapsed={sidebarCollapsed} onCollapsedChange={setCollapsed} />
-      <main style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
+      <main id="hub-main" style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
         {cloudBanner && (
           <div
-            role="status"
+            role="alert"
+            aria-live="assertive"
             onClick={() => setCloudBanner(null)}
             style={{
               margin: "12px 44px 0",
@@ -166,6 +269,26 @@ export function App() {
             {cloudBanner.includes("Cloud cleanup")
               ? cloudBanner
               : "Cloud cleanup was unavailable — your last dictation was pasted raw. Check your API key and network."}
+          </div>
+        )}
+        {hotkeysBanner && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            onClick={() => setHotkeysBanner(null)}
+            style={{
+              margin: "12px 44px 0",
+              padding: "12px 16px",
+              borderRadius: 12,
+              background: "rgba(180, 120, 24, 0.12)",
+              border: "1px solid rgba(180, 120, 24, 0.35)",
+              color: theme.textStrong,
+              fontSize: 13.5,
+              lineHeight: 1.45,
+              cursor: "pointer",
+            }}
+          >
+            {hotkeysBanner}
           </div>
         )}
         <div style={{ padding: "36px 44px", margin: "0 auto", maxWidth: 1120 }}>
@@ -190,6 +313,73 @@ export function App() {
         </div>
       </main>
       {showWalkthrough && <Walkthrough setPage={setPage} onComplete={() => setShowWalkthrough(false)} />}
+      <KeyboardCheatsheet open={cheatsheet} onClose={() => setCheatsheet(false)} setPage={setPage} />
+      {whatsNew && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="What's new"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(20, 18, 16, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1050,
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              width: 520,
+              maxWidth: "100%",
+              maxHeight: "80vh",
+              overflow: "auto",
+              background: theme.cardBg,
+              border: `1px solid ${theme.border}`,
+              borderRadius: 16,
+              boxShadow: theme.shadow,
+              padding: 24,
+            }}
+          >
+            <div style={{ fontSize: 17, fontWeight: 700, color: theme.textStrong, marginBottom: 10 }}>
+              What&apos;s new
+            </div>
+            <pre
+              style={{
+                margin: 0,
+                whiteSpace: "pre-wrap",
+                fontFamily: font.ui,
+                fontSize: 13,
+                lineHeight: 1.5,
+                color: theme.textMuted,
+              }}
+            >
+              {whatsNew}
+            </pre>
+            <button
+              type="button"
+              aria-label="Dismiss what's new"
+              onClick={() => setWhatsNew(null)}
+              style={{
+                marginTop: 16,
+                cursor: "pointer",
+                border: "none",
+                borderRadius: 10,
+                padding: "11px 14px",
+                fontSize: 13.5,
+                fontWeight: 650,
+                fontFamily: font.ui,
+                color: theme.solidText,
+                background: theme.solidBg,
+              }}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
       {safeMode && (
         <div
           style={{
@@ -221,6 +411,37 @@ export function App() {
               WhimprFlow failed to start 3 times. You may need to reinstall the previous version.
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {previousVersion && (
+                <button
+                  type="button"
+                  disabled={rollingBack}
+                  aria-label="Restore previous version"
+                  onClick={() => {
+                    setRollingBack(true);
+                    void rollbackToPreviousVersion()
+                      .then(() => relaunchAfterUpdate())
+                      .catch((e) => {
+                        toast.error(e instanceof Error ? e.message : String(e));
+                        setRollingBack(false);
+                      });
+                  }}
+                  style={{
+                    cursor: rollingBack ? "wait" : "pointer",
+                    border: "none",
+                    borderRadius: 10,
+                    padding: "11px 14px",
+                    fontSize: 13.5,
+                    fontWeight: 650,
+                    fontFamily: font.ui,
+                    color: theme.solidText,
+                    background: theme.solidBg,
+                  }}
+                >
+                  {rollingBack
+                    ? "Restoring…"
+                    : `Restore previous version (${previousVersion})`}
+                </button>
+              )}
               <a
                 href="https://github.com/ch1kim0n1/WhimprFlow/releases"
                 target="_blank"
@@ -232,14 +453,16 @@ export function App() {
                   padding: "11px 14px",
                   fontSize: 13.5,
                   fontWeight: 650,
-                  color: theme.solidText,
-                  background: theme.solidBg,
+                  color: previousVersion ? theme.textStrong : theme.solidText,
+                  background: previousVersion ? theme.cardBgSubtle : theme.solidBg,
+                  border: previousVersion ? `1px solid ${theme.border}` : "none",
                 }}
               >
-                Download previous version
+                Download from GitHub
               </a>
               <button
                 type="button"
+                aria-label="Continue in safe mode"
                 onClick={() => {
                   void dismissSafeMode().then(() => setSafeMode(false));
                 }}

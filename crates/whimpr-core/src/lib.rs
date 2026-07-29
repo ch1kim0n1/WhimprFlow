@@ -34,7 +34,8 @@ pub use license::{
 };
 pub use safety::redact_inappropriate_words;
 pub use settings::{
-    CapsuleSettings, Chord, CleanupMode, Formality, Key, KeyBindings, Settings, StyleProfile,
+    strip_auto_punctuation, strip_fillers, CapsuleSettings, Chord, CleanupMode, Formality, Key,
+    KeyBindings, Settings, StyleProfile,
 };
 pub use snippets::{SnippetEntry, SnippetStore};
 pub use state::{

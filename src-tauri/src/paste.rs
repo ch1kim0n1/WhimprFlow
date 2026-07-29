@@ -8,6 +8,9 @@
 
 /// Restore (or clear) the clipboard after a paste, honoring
 /// `clear_clipboard_after_paste`.
+///
+/// On Windows, when clearing, also clears Windows Clipboard History (Win+V).
+/// macOS Universal Clipboard ages out on its own; Linux has no standard history API.
 pub(crate) fn restore_clipboard_after_paste(cb: &mut arboard::Clipboard, saved: Option<String>) {
     let clear_empty = crate::hotkey::current_settings().clear_clipboard_after_paste;
     if clear_empty {
@@ -17,12 +20,39 @@ pub(crate) fn restore_clipboard_after_paste(cb: &mut arboard::Clipboard, saved: 
             }
             _ => {
                 let _ = cb.clear();
+                clear_os_clipboard_history();
             }
         }
     } else if let Some(prev) = saved {
         let _ = cb.set_text(prev);
     }
 }
+
+#[cfg(target_os = "windows")]
+fn clear_os_clipboard_history() {
+    // Win10 1809+: ClearClipboardHistory in user32. Resolve at runtime so older
+    // SDKs / linkers without the import still build.
+    use windows::core::PCSTR;
+    use windows::Win32::Foundation::HMODULE;
+    use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+    type ClearFn = unsafe extern "system" fn() -> i32;
+    unsafe {
+        let Ok(lib) = LoadLibraryA(PCSTR::from_raw(c"user32.dll".as_ptr().cast())) else {
+            return;
+        };
+        let Some(proc) = GetProcAddress(
+            HMODULE(lib.0),
+            PCSTR::from_raw(c"ClearClipboardHistory".as_ptr().cast()),
+        ) else {
+            return;
+        };
+        let f: ClearFn = std::mem::transmute(proc);
+        let _ = f();
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn clear_os_clipboard_history() {}
 
 #[cfg(target_os = "macos")]
 mod imp {
@@ -255,7 +285,15 @@ pub use imp::{
     request_input_monitoring,
 };
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+// On Linux, text injection lives in `crate::linux::paste_text` (xdotool). These
+// stubs keep the Hub permission surface compiling; hotkey paths call linux::paste.
+#[cfg(target_os = "linux")]
+#[allow(dead_code)]
+pub fn paste_text(text: &str) -> anyhow::Result<()> {
+    crate::linux::paste_text(text)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn paste_text(_text: &str) -> anyhow::Result<()> {
     Ok(())
 }
@@ -266,6 +304,7 @@ pub fn is_trusted() -> bool {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[allow(dead_code)]
 pub fn prompt_accessibility() -> bool {
     true
 }
@@ -281,6 +320,7 @@ pub fn input_monitoring_granted() -> bool {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[allow(dead_code)]
 pub fn request_input_monitoring() -> bool {
     true
 }

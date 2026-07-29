@@ -756,6 +756,13 @@ mod imp {
             .map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone())
             .unwrap_or_default()
     }
+
+    /// Initialize settings OnceLock for smoke / unit tests (no Tauri AppHandle).
+    pub fn bootstrap_for_tests() {
+        let settings = whimpr_core::Settings::load(&settings_path());
+        let _ = SETTINGS.set(Mutex::new(settings));
+    }
+
     /// Apply new settings and rebuild the cloud providers (picks up model
     /// changes). Also applies retention immediately (prunes stored text older
     /// than the new window) and hot-reloads the whisper engine when a language
@@ -1388,7 +1395,7 @@ mod imp {
         // Meeting mode: a locked (hands-free) session's transcript becomes a
         // note instead of a paste.
         if settings.meeting_mode && was_locked {
-            crate::notes::add(local_datetime_title(), text.clone(), None);
+            let _ = crate::notes::add(local_datetime_title(), text.clone(), None);
             record_dictation(
                 &text,
                 &raw_out,
@@ -1517,7 +1524,7 @@ mod imp {
                 }
             }
             WorkflowDestination::Note => {
-                crate::notes::add(name.to_string(), text.clone(), None);
+                let _ = crate::notes::add(name.to_string(), text.clone(), None);
                 (true, "noted", None)
             }
         };
@@ -1753,7 +1760,8 @@ mod imp {
                 let app_thread = app.clone();
                 std::thread::spawn(move || {
                     let app_cb = app_thread.clone();
-                    match whimpr_audio::start(move |bars| {
+                    let device = current_settings().input_device.clone();
+                    match whimpr_audio::start_named(device, move |bars| {
                         let _ = app_cb.emit_to(
                             OVERLAY_LABEL,
                             "whimpr://audio/waveform",
@@ -1859,12 +1867,19 @@ mod imp {
                     let long_form = was_locked && settings.meeting_mode;
                     let pcm = whimpr_audio::resample_to_16k(&res.samples, res.sample_rate);
                     let lang = effective_language(settings.language.as_deref());
-                    match asr.transcribe_opts(&pcm, lang.as_deref(), long_form) {
+                    match asr.transcribe_opts_ex(
+                        &pcm,
+                        lang.as_deref(),
+                        long_form,
+                        settings.auto_punctuate,
+                    ) {
                         Ok(t) => {
-                            tracing::info!(target: "whimpr", "[whimpr] TRANSCRIPT: \"{}\"", t.text);
+                            let text =
+                                whimpr_core::strip_fillers(&t.text, &settings.custom_fillers);
+                            tracing::info!(target: "whimpr", "[whimpr] TRANSCRIPT: \"{text}\"");
                             finalize_transcript(
                                 &app2,
-                                t.text,
+                                text,
                                 t.confidence,
                                 t.low_words,
                                 res.duration_secs(),
@@ -2243,12 +2258,16 @@ mod imp {
     /// land in the Hub itself  -  re-activate the app the user dictated into
     /// first, and when that fails (app quit, nothing captured) deliver to the
     /// clipboard instead and say so in the receipt.
-    pub fn approve_pending() {
-        let item = PENDING
-            .get()
-            .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).take());
+    pub fn approve_pending() -> Result<(), String> {
+        let item = match PENDING.get() {
+            Some(m) => m
+                .lock()
+                .map_err(|e| format!("pending lock poisoned: {e}"))?
+                .take(),
+            None => None,
+        };
         let (Some(item), Some(app)) = (item, APP.get()) else {
-            return;
+            return Ok(());
         };
         let mut destination = item.destination;
         let mut note = None;
@@ -2276,13 +2295,16 @@ mod imp {
             item.duration_secs,
             note,
         );
+        Ok(())
     }
 
     /// Discard the held workflow result without executing it.
-    pub fn reject_pending() {
+    pub fn reject_pending() -> Result<(), String> {
         if let Some(m) = PENDING.get() {
-            *m.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            *m.lock()
+                .map_err(|e| format!("pending lock poisoned: {e}"))? = None;
         }
+        Ok(())
     }
 
     fn hex_encode(bytes: &[u8]) -> String {
@@ -2382,14 +2404,15 @@ mod imp {
     }
 
     /// Wipe the correction log (the dictionary itself is managed separately).
-    pub fn clear_voice_memory() {
+    pub fn clear_voice_memory() -> Result<(), String> {
         if let Some(m) = VOICE_MEMORY.get() {
             m.lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .map_err(|e| format!("voice memory lock poisoned: {e}"))?
                 .corrections
                 .clear();
         }
         save_voice_memory();
+        Ok(())
     }
 
     /// Screenshot the whole screen into the app's captures folder and return
@@ -2553,13 +2576,13 @@ mod imp {
 
 #[cfg(target_os = "macos")]
 pub use imp::{
-    approve_pending, backup_data, cancel_dictation, capture_screen, clear_history_text,
-    clear_voice_memory, confirm_dictation, current_settings, dictionary_add, dictionary_entries,
-    dictionary_learn, dictionary_remove, export_voice_memory, get_health, get_last_capsule,
-    get_voice_memory, history, install, list_backups, rebuild_providers, reject_pending,
-    reload_asr, restore_backup, snippet_add, snippet_entries, snippet_remove, stats_summary,
-    test_command_edit, update_settings, voice_memory_record, workflow_add, workflow_entries,
-    workflow_remove,
+    approve_pending, backup_data, bootstrap_for_tests, cancel_dictation, capture_screen,
+    clear_history_text, clear_voice_memory, confirm_dictation, current_settings, dictionary_add,
+    dictionary_entries, dictionary_learn, dictionary_remove, export_voice_memory, get_health,
+    get_last_capsule, get_voice_memory, history, install, list_backups, rebuild_providers,
+    reject_pending, reload_asr, restore_backup, snippet_add, snippet_entries, snippet_remove,
+    stats_summary, test_command_edit, update_settings, voice_memory_record, workflow_add,
+    workflow_entries, workflow_remove,
 };
 // Not yet consumed: their lib.rs command wrappers land with the Workflows /
 // Privacy pane wiring. Kept in a separate `use` so the allow is scoped to them.
@@ -2573,27 +2596,28 @@ pub use imp::{get_pending, ledger};
 #[cfg(target_os = "windows")]
 #[allow(unused_imports)] // dictionary_learn kept for IPC surface parity with macOS
 pub use crate::win::{
-    approve_pending, backup_data, cancel_dictation, capture_screen, clear_history_text,
-    clear_voice_memory, confirm_dictation, current_settings, dictionary_add, dictionary_entries,
-    dictionary_learn, dictionary_remove, export_voice_memory, get_health, get_last_capsule,
-    get_pending, get_voice_memory, history, install, ledger, list_backups, rebuild_providers,
-    reject_pending, reload_asr, restore_backup, snippet_add, snippet_entries, snippet_remove,
-    stats_summary, update_settings, voice_memory_record, workflow_add, workflow_entries,
-    workflow_remove,
+    approve_pending, backup_data, bootstrap_for_tests, cancel_dictation, capture_screen,
+    clear_history_text, clear_voice_memory, confirm_dictation, current_settings, dictionary_add,
+    dictionary_entries, dictionary_learn, dictionary_remove, export_voice_memory, get_health,
+    get_last_capsule, get_pending, get_voice_memory, history, install, ledger, list_backups,
+    rebuild_providers, reject_pending, reload_asr, restore_backup, snippet_add, snippet_entries,
+    snippet_remove, stats_summary, update_settings, voice_memory_record, workflow_add,
+    workflow_entries, workflow_remove,
 };
 
 // Linux uses the real (but unverified) platform layer in `crate::linux`  -  X11 only
 // for this pass; see that module's doc comment for the Wayland follow-up and the
 // XGrabKey / xdotool simplifications made.
 #[cfg(target_os = "linux")]
+#[allow(unused_imports)] // dictionary_learn kept for IPC surface parity with macOS
 pub use crate::linux::{
-    approve_pending, backup_data, cancel_dictation, capture_screen, clear_history_text,
-    clear_voice_memory, confirm_dictation, current_settings, dictionary_add, dictionary_entries,
-    dictionary_learn, dictionary_remove, export_voice_memory, get_health, get_last_capsule,
-    get_pending, get_voice_memory, history, install, ledger, list_backups, rebuild_providers,
-    reject_pending, reload_asr, restore_backup, snippet_add, snippet_entries, snippet_remove,
-    stats_summary, update_settings, voice_memory_record, workflow_add, workflow_entries,
-    workflow_remove,
+    approve_pending, backup_data, bootstrap_for_tests, cancel_dictation, capture_screen,
+    clear_history_text, clear_voice_memory, confirm_dictation, current_settings, dictionary_add,
+    dictionary_entries, dictionary_learn, dictionary_remove, export_voice_memory, get_health,
+    get_last_capsule, get_pending, get_voice_memory, history, install, ledger, list_backups,
+    rebuild_providers, reject_pending, reload_asr, restore_backup, snippet_add, snippet_entries,
+    snippet_remove, stats_summary, update_settings, voice_memory_record, workflow_add,
+    workflow_entries, workflow_remove,
 };
 
 // Other platforms (BSD, etc.): inert stubs so the crate still builds.
@@ -2603,6 +2627,7 @@ mod other {
     pub fn current_settings() -> whimpr_core::Settings {
         whimpr_core::Settings::default()
     }
+    pub fn bootstrap_for_tests() {}
     pub fn update_settings(_new: whimpr_core::Settings) {}
     pub fn rebuild_providers() {}
     pub fn confirm_dictation() {}
@@ -2678,8 +2703,12 @@ mod other {
     pub fn get_pending() -> Option<super::PendingPayload> {
         None
     }
-    pub fn approve_pending() {}
-    pub fn reject_pending() {}
+    pub fn approve_pending() -> Result<(), String> {
+        Ok(())
+    }
+    pub fn reject_pending() -> Result<(), String> {
+        Ok(())
+    }
     pub fn voice_memory_record(_from: String, _to: String, _source: &str) {}
     pub fn get_voice_memory() -> Vec<whimpr_core::CorrectionEvent> {
         Vec::new()
@@ -2687,18 +2716,20 @@ mod other {
     pub fn export_voice_memory() -> Result<String, String> {
         Err("voice memory is not implemented on this platform".to_string())
     }
-    pub fn clear_voice_memory() {}
+    pub fn clear_voice_memory() -> Result<(), String> {
+        Ok(())
+    }
     pub fn capture_screen() -> Result<String, String> {
         Err("screen capture is only implemented on macOS".to_string())
     }
 }
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub use other::{
-    approve_pending, backup_data, cancel_dictation, capture_screen, clear_history_text,
-    clear_voice_memory, confirm_dictation, current_settings, dictionary_add, dictionary_entries,
-    dictionary_learn, dictionary_remove, export_voice_memory, get_health, get_last_capsule,
-    get_pending, get_voice_memory, history, install, ledger, list_backups, rebuild_providers,
-    reject_pending, reload_asr, restore_backup, snippet_add, snippet_entries, snippet_remove,
-    stats_summary, update_settings, voice_memory_record, workflow_add, workflow_entries,
-    workflow_remove,
+    approve_pending, backup_data, bootstrap_for_tests, cancel_dictation, capture_screen,
+    clear_history_text, clear_voice_memory, confirm_dictation, current_settings, dictionary_add,
+    dictionary_entries, dictionary_learn, dictionary_remove, export_voice_memory, get_health,
+    get_last_capsule, get_pending, get_voice_memory, history, install, ledger, list_backups,
+    rebuild_providers, reject_pending, reload_asr, restore_backup, snippet_add, snippet_entries,
+    snippet_remove, stats_summary, update_settings, voice_memory_record, workflow_add,
+    workflow_entries, workflow_remove,
 };

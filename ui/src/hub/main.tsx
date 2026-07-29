@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "../i18n";
 import { App } from "./App";
+import { ToastEventBridge, ToastProvider } from "./Toast";
 import { THEME_CSS, applyStoredTheme } from "./theme";
 
 applyStoredTheme();
@@ -26,6 +27,9 @@ document.head.appendChild(style);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <ToastProvider>
+      <ToastEventBridge />
+      <App />
+    </ToastProvider>
   </React.StrictMode>,
 );

@@ -296,6 +296,41 @@ pub struct Settings {
     /// When true, panic hook writes a local crash report file (never uploaded).
     #[serde(default)]
     pub crash_reporting_opt_in: bool,
+    /// Close Hub to tray instead of quitting. Default on.
+    #[serde(default = "default_true")]
+    pub minimize_to_tray: bool,
+    /// Preferred microphone name (`None` = system default).
+    #[serde(default)]
+    pub input_device: Option<String>,
+    /// Let Whisper emit punctuation. Default on.
+    #[serde(default = "default_true")]
+    pub auto_punctuate: bool,
+    /// Extra filler words stripped during cleanup (case-insensitive).
+    #[serde(default = "default_fillers")]
+    pub custom_fillers: Vec<String>,
+    /// Active ASR model file path (under the models directory or absolute).
+    #[serde(default)]
+    pub asr_model: Option<String>,
+    /// Settings schema version for forward migrations.
+    #[serde(default = "default_settings_version")]
+    pub settings_version: u32,
+    /// Last app version whose changelog the user dismissed.
+    #[serde(default)]
+    pub last_seen_version: Option<String>,
+    /// Onboarding wizard step (`None` = not started, `Some(5)` = complete).
+    #[serde(default)]
+    pub onboarding_step: Option<u32>,
+}
+
+fn default_fillers() -> Vec<String> {
+    ["um", "uh", "er", "ah", "like"]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+
+fn default_settings_version() -> u32 {
+    1
 }
 
 /// Serde default for the settings that ship ON (see `default = "default_true"`).
@@ -330,6 +365,14 @@ impl Default for Settings {
             unload_asr_after_idle_minutes: 0,
             sound_on_complete: false,
             crash_reporting_opt_in: false,
+            minimize_to_tray: true,
+            input_device: None,
+            auto_punctuate: true,
+            custom_fillers: default_fillers(),
+            asr_model: None,
+            settings_version: default_settings_version(),
+            last_seen_version: None,
+            onboarding_step: None,
         }
     }
 }
@@ -341,7 +384,20 @@ pub fn validate_keybindings(kb: &KeyBindings) -> Vec<String> {
 
 impl Settings {
     pub fn load(path: &Path) -> Self {
-        crate::json_store::load_or_recover(path)
+        let mut s: Self = crate::json_store::load_or_recover(path);
+        const EXPECTED: u32 = 1;
+        if s.settings_version < EXPECTED {
+            tracing::info!(
+                target: "whimpr",
+                from = s.settings_version,
+                to = EXPECTED,
+                "migrating settings schema"
+            );
+            // Placeholder for migrate_v1_to_v2 etc.
+            s.settings_version = EXPECTED;
+            let _ = s.save(path);
+        }
+        s
     }
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
@@ -352,9 +408,51 @@ impl Settings {
     }
 }
 
+/// Remove whole-word filler tokens (case-insensitive) from a transcript.
+pub fn strip_fillers(text: &str, fillers: &[String]) -> String {
+    if fillers.is_empty() {
+        return text.to_string();
+    }
+    let set: std::collections::HashSet<String> = fillers
+        .iter()
+        .map(|f| f.trim().to_ascii_lowercase())
+        .filter(|f| !f.is_empty())
+        .collect();
+    if set.is_empty() {
+        return text.to_string();
+    }
+    text.split_whitespace()
+        .filter(|w| {
+            let bare = w
+                .trim_matches(|c: char| c.is_ascii_punctuation())
+                .to_ascii_lowercase();
+            !set.contains(&bare)
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Drop ASCII sentence punctuation when auto-punctuation is disabled.
+pub fn strip_auto_punctuation(text: &str) -> String {
+    text.chars()
+        .filter(|c| {
+            !matches!(
+                c,
+                ',' | '.' | ';' | ':' | '!' | '?' | '"' | '\u{201c}' | '\u{201d}'
+            )
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn strip_fillers_removes_listed_words() {
+        let out = strip_fillers("um hello uh world", &default_fillers());
+        assert_eq!(out, "hello world");
+    }
 
     #[test]
     fn defaults_are_sane() {

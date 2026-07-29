@@ -90,12 +90,43 @@ impl Drop for CaptureHandle {
     }
 }
 
+/// Named input device for Hub pickers.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct InputDevice {
+    pub name: String,
+    pub is_default: bool,
+}
+
+/// Enumerate host input devices (best-effort; empty on failure).
+pub fn list_input_devices() -> Vec<InputDevice> {
+    let host = cpal::default_host();
+    let default_name = host.default_input_device().and_then(|d| d.name().ok());
+    let Ok(devices) = host.input_devices() else {
+        return Vec::new();
+    };
+    devices
+        .filter_map(|d| {
+            let name = d.name().ok()?;
+            let is_default = default_name.as_ref() == Some(&name);
+            Some(InputDevice { name, is_default })
+        })
+        .collect()
+}
+
 /// Start capturing from the default input device.
 ///
 /// `on_bars` is called ~30x/second with `WAVE_BARS` RMS levels in `[0, 1]`
 /// (oldest→newest), from the audio thread. Returns once the stream is playing (so
 /// a microphone-permission failure surfaces here, not silently).
 pub fn start<F>(on_bars: F) -> anyhow::Result<CaptureHandle>
+where
+    F: Fn(&[f32]) + Send + 'static,
+{
+    start_named(None, on_bars)
+}
+
+/// Start capturing from a named input device (`None` = system default).
+pub fn start_named<F>(device_name: Option<String>, on_bars: F) -> anyhow::Result<CaptureHandle>
 where
     F: Fn(&[f32]) + Send + 'static,
 {
@@ -112,7 +143,16 @@ where
 
     let join = std::thread::spawn(move || -> Option<CaptureResult> {
         let host = cpal::default_host();
-        let device = match host.default_input_device() {
+        let device = if let Some(want) = device_name.as_deref() {
+            match host.input_devices() {
+                Ok(mut devices) => devices.find(|d| d.name().ok().as_deref() == Some(want)),
+                Err(_) => None,
+            }
+            .or_else(|| host.default_input_device())
+        } else {
+            host.default_input_device()
+        };
+        let device = match device {
             Some(d) => d,
             None => {
                 let _ = ready_tx.send(Err(anyhow::anyhow!("no default input device")));

@@ -10,3 +10,4 @@ license.workspace = true
 [dependencies]
 cpal = "0.15"
 anyhow = { workspace = true }
+serde = { workspace = true }

@@ -7,21 +7,39 @@ import { Icon, type IconName } from "./icons";
 import {
   backupData,
   checkForUpdate,
+  deleteModel,
+  downloadAsrModel,
   exportDiagnostics,
+  exportSettings,
+  getLastColdStartMs,
+  getRssBytes,
+  importSettings,
+  isAutostartEnabled,
   listCrashReports,
   listBackups,
+  listInputDevices,
+  listInstalledModels,
+  listModelOffers,
   relaunchAfterUpdate,
   requestAccessibility,
   requestInputMonitoring,
   requestMicrophone,
   restoreBackup,
+  setActiveModel,
   setApiKey,
+  setAutostart,
+  setInputDevice,
+  validateApiKey,
   type AvailableUpdate,
   type CleanupLevel,
   type CleanupMode,
+  type InputDevice,
+  type InstalledModel,
+  type ModelOffer,
   type Settings,
   type Status,
 } from "./api";
+import { toast } from "./Toast";
 
 const APP_VERSION = "1.0.0";
 
@@ -402,8 +420,18 @@ export function SettingsPane({
           label="OpenAI API key"
           configured={status.has_openai_key}
           onSave={(k) => {
-            setApiKey("openai", k);
-            setTimeout(refresh, 400);
+            void (async () => {
+              try {
+                if (k.trim()) {
+                  await validateApiKey("openai", k, settings.openai_base_url || null);
+                  toast.success("API key valid");
+                }
+              } catch (e) {
+                toast.error(`API key rejected: ${e instanceof Error ? e.message : String(e)}`);
+              }
+              await setApiKey("openai", k);
+              setTimeout(refresh, 400);
+            })();
           }}
         />
         <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
@@ -458,8 +486,18 @@ export function SettingsPane({
           label="Anthropic API key"
           configured={status.has_anthropic_key}
           onSave={(k) => {
-            setApiKey("anthropic", k);
-            setTimeout(refresh, 400);
+            void (async () => {
+              try {
+                if (k.trim()) {
+                  await validateApiKey("anthropic", k);
+                  toast.success("API key valid");
+                }
+              } catch (e) {
+                toast.error(`API key rejected: ${e instanceof Error ? e.message : String(e)}`);
+              }
+              await setApiKey("anthropic", k);
+              setTimeout(refresh, 400);
+            })();
           }}
         />
       </Card>
@@ -694,12 +732,19 @@ export function SettingsPane({
           </label>
           <ToggleRow
             label="Clear clipboard after paste"
-            detail="When the clipboard was empty, remove the transcript so it does not linger in OS clipboard history."
+            detail="When the clipboard was empty, clear the transcript. Also clears Windows Clipboard History (Win+V) when enabled. macOS Universal Clipboard ages out automatically; Linux has no standard clipboard history API."
             value={settings.clear_clipboard_after_paste}
             onChange={(v) => onChange({ ...settings, clear_clipboard_after_paste: v })}
           />
+          <PerfReadout />
         </div>
       </Card>
+
+      <DictationCard settings={settings} onChange={onChange} />
+      <AudioInputCard settings={settings} onChange={onChange} />
+      <SpeechModelsCard />
+      <DesktopCard settings={settings} onChange={onChange} />
+      <TransferCard onChange={onChange} />
 
       <CrashReportsCard
         settings={settings}
@@ -783,6 +828,350 @@ function backupLabel(path: string): string {
   } catch {
     return base;
   }
+}
+
+function PerfReadout() {
+  const [cold, setCold] = useState<number | null>(null);
+  const [rss, setRss] = useState<number | null>(null);
+  useEffect(() => {
+    void getLastColdStartMs().then(setCold);
+    void getRssBytes().then(setRss);
+  }, []);
+  return (
+    <div style={{ fontSize: 12.5, color: theme.textMuted, lineHeight: 1.45 }}>
+      Cold start: {cold != null ? `${cold} ms` : "—"}
+      {" · "}
+      Memory (RSS): {rss != null ? `${Math.round(rss / (1024 * 1024))} MB` : "—"}
+    </div>
+  );
+}
+
+function DictationCard({
+  settings,
+  onChange,
+}: {
+  settings: Settings;
+  onChange: (s: Settings) => void;
+}) {
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <SectionTitle icon="mic" sub="Whisper punctuation and local filler removal.">
+        Dictation
+      </SectionTitle>
+      <ToggleRow
+        label="Auto-punctuation"
+        detail="When off, commas and periods are stripped from Whisper output."
+        value={settings.auto_punctuate}
+        onChange={(v) => onChange({ ...settings, auto_punctuate: v })}
+      />
+      <label style={{ display: "block", marginTop: 12, fontSize: 13, color: theme.textMuted }}>
+        Filler words (comma-separated)
+        <textarea
+          aria-label="Filler words"
+          value={settings.custom_fillers.join(", ")}
+          onChange={(e) =>
+            onChange({
+              ...settings,
+              custom_fillers: e.target.value
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          }
+          rows={2}
+          style={{
+            display: "block",
+            marginTop: 6,
+            width: "100%",
+            padding: "9px 12px",
+            borderRadius: 10,
+            border: `1px solid ${theme.border}`,
+            background: theme.cardBgSubtle,
+            color: theme.textStrong,
+            fontFamily: font.ui,
+            fontSize: 13,
+            resize: "vertical",
+            boxSizing: "border-box",
+          }}
+        />
+      </label>
+    </Card>
+  );
+}
+
+function AudioInputCard({
+  settings,
+  onChange,
+}: {
+  settings: Settings;
+  onChange: (s: Settings) => void;
+}) {
+  const [devices, setDevices] = useState<InputDevice[]>([]);
+  useEffect(() => {
+    void listInputDevices().then(setDevices);
+  }, []);
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <SectionTitle icon="mic" sub="Choose which microphone dictation uses.">
+        Audio input
+      </SectionTitle>
+      <select
+        aria-label="Input device"
+        value={settings.input_device ?? ""}
+        onChange={(e) => {
+          const name = e.target.value;
+          onChange({ ...settings, input_device: name || null });
+          void setInputDevice(name)
+            .then(() => toast.success(name ? `Mic: ${name}` : "Using system default mic"))
+            .catch((err) => toast.error(String(err)));
+        }}
+        style={{
+          width: "100%",
+          padding: "9px 12px",
+          borderRadius: 10,
+          border: `1px solid ${theme.border}`,
+          background: theme.cardBgSubtle,
+          color: theme.textStrong,
+          fontFamily: font.ui,
+          fontSize: 13.5,
+        }}
+      >
+        <option value="">System default</option>
+        {devices.map((d) => (
+          <option key={d.name} value={d.name}>
+            {d.name}
+            {d.is_default ? " (default)" : ""}
+          </option>
+        ))}
+      </select>
+    </Card>
+  );
+}
+
+function SpeechModelsCard() {
+  const [models, setModels] = useState<InstalledModel[]>([]);
+  const [offers, setOffers] = useState<ModelOffer[]>([]);
+  const [busy, setBusy] = useState(false);
+  const reload = () => void listInstalledModels().then(setModels);
+  useEffect(() => {
+    reload();
+    void listModelOffers().then(setOffers);
+  }, []);
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <SectionTitle icon="sparkles" sub="Download, switch, or remove Whisper models.">
+        Speech models
+      </SectionTitle>
+      {models.length === 0 ? (
+        <div style={{ color: theme.textMuted, fontSize: 13 }}>No models installed yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {models.map((m) => (
+            <div
+              key={m.path}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ fontSize: 13.5, color: theme.textStrong }}>
+                {m.name}
+                {m.active ? (
+                  <span style={{ color: theme.accentDeep, marginLeft: 8, fontWeight: 650 }}>active</span>
+                ) : null}
+                <div style={{ fontSize: 12, color: theme.textFaint }}>
+                  {(m.size_bytes / (1024 * 1024)).toFixed(0)} MB
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {!m.active && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    aria-label={`Set ${m.name} active`}
+                    onClick={() => {
+                      setBusy(true);
+                      void setActiveModel(m.path)
+                        .then(() => {
+                          toast.success("Active model updated");
+                          reload();
+                        })
+                        .catch((e) => toast.error(String(e)))
+                        .finally(() => setBusy(false));
+                    }}
+                  >
+                    Set active
+                  </Button>
+                )}
+                {!m.active && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    aria-label={`Delete ${m.name}`}
+                    onClick={() => {
+                      setBusy(true);
+                      void deleteModel(m.path)
+                        .then(() => {
+                          toast.success("Model deleted");
+                          reload();
+                        })
+                        .catch((e) => toast.error(String(e)))
+                        .finally(() => setBusy(false));
+                    }}
+                  >
+                    Delete
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ marginTop: 14 }}>
+        <div style={{ fontSize: 12.5, color: theme.textMuted, marginBottom: 6 }}>Download</div>
+        <select
+          aria-label="Download speech model"
+          defaultValue=""
+          disabled={busy}
+          onChange={(e) => {
+            const id = e.target.value;
+            if (!id) return;
+            setBusy(true);
+            void downloadAsrModel(id)
+              .then(() => {
+                toast.success("Model downloaded");
+                reload();
+              })
+              .catch((err) => toast.error(String(err)))
+              .finally(() => {
+                setBusy(false);
+                e.target.value = "";
+              });
+          }}
+          style={{
+            width: "100%",
+            padding: "9px 12px",
+            borderRadius: 10,
+            border: `1px solid ${theme.border}`,
+            background: theme.cardBgSubtle,
+            color: theme.textStrong,
+            fontFamily: font.ui,
+            fontSize: 13.5,
+          }}
+        >
+          <option value="" disabled>
+            Choose a model…
+          </option>
+          {offers.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    </Card>
+  );
+}
+
+function DesktopCard({
+  settings,
+  onChange,
+}: {
+  settings: Settings;
+  onChange: (s: Settings) => void;
+}) {
+  const [autostart, setAutostartState] = useState(false);
+  useEffect(() => {
+    void isAutostartEnabled().then(setAutostartState);
+  }, []);
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <SectionTitle icon="settings" sub="Tray and login behavior.">
+        Desktop
+      </SectionTitle>
+      <ToggleRow
+        label="Minimize to tray when closing Hub"
+        detail="Keeps WhimprFlow running in the system tray instead of quitting."
+        value={settings.minimize_to_tray}
+        onChange={(v) => onChange({ ...settings, minimize_to_tray: v })}
+      />
+      <ToggleRow
+        label="Start WhimprFlow when I log in"
+        detail="Uses the OS login items / startup apps list."
+        value={autostart}
+        onChange={(v) => {
+          setAutostartState(v);
+          void setAutostart(v)
+            .then(() => toast.success(v ? "Autostart enabled" : "Autostart disabled"))
+            .catch((e) => toast.error(String(e)));
+        }}
+      />
+    </Card>
+  );
+}
+
+function TransferCard({ onChange }: { onChange: (s: Settings) => void }) {
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <SectionTitle icon="archive" sub="Move preferences between machines.">
+        Transfer
+      </SectionTitle>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Export settings"
+          onClick={() => {
+            void exportSettings()
+              .then((json) => {
+                const blob = new Blob([json], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "whimprflow-settings.json";
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success("Settings exported");
+              })
+              .catch((e) => toast.error(String(e)));
+          }}
+        >
+          Export settings
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Import settings"
+          onClick={() => {
+            const input = document.createElement("input");
+            input.type = "file";
+            input.accept = "application/json,.json";
+            input.onchange = () => {
+              const file = input.files?.[0];
+              if (!file) return;
+              void file.text().then(async (text) => {
+                try {
+                  const next = await importSettings(text);
+                  onChange(next);
+                  toast.success("Settings imported");
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : String(e));
+                }
+              });
+            };
+            input.click();
+          }}
+        >
+          Import settings
+        </Button>
+      </div>
+    </Card>
+  );
 }
 
 function CrashReportsCard({

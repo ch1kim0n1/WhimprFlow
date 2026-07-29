@@ -864,14 +864,17 @@ fn on_ptt_down() {
     // path: the same `CaptureHandle::snapshot()` loop `hotkey.rs` runs
     // (`spawn_partial_loop`, ~1.2 s cadence); nothing about it is
     // macOS-specific beyond having only been verified there.
-    std::thread::spawn(|| match whimpr_audio::start(|_: &[f32]| {}) {
-        Ok(handle) => {
-            *CAPTURE
-                .get_or_init(|| Mutex::new(None))
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = Some(handle);
+    std::thread::spawn(|| {
+        let device = current_settings_inner().input_device.clone();
+        match whimpr_audio::start_named(device, |_: &[f32]| {}) {
+            Ok(handle) => {
+                *CAPTURE
+                    .get_or_init(|| Mutex::new(None))
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(handle);
+            }
+            Err(e) => tracing::info!(target: "whimpr", "[whimpr:win] mic capture failed: {e}"),
         }
-        Err(e) => tracing::info!(target: "whimpr", "[whimpr:win] mic capture failed: {e}"),
     });
 }
 
@@ -941,11 +944,12 @@ fn finish_capture_and_paste(was_locked: bool) {
         let long_form = was_locked && settings.meeting_mode;
         let pcm = whimpr_audio::resample_to_16k(&res.samples, res.sample_rate);
         let lang = effective_language(settings.language.as_deref());
-        match asr.transcribe_opts(&pcm, lang.as_deref(), long_form) {
+        match asr.transcribe_opts_ex(&pcm, lang.as_deref(), long_form, settings.auto_punctuate) {
             Ok(t) => {
-                tracing::info!(target: "whimpr", "[whimpr:win] TRANSCRIPT: \"{}\"", t.text);
+                let text = whimpr_core::strip_fillers(&t.text, &settings.custom_fillers);
+                tracing::info!(target: "whimpr", "[whimpr:win] TRANSCRIPT: \"{text}\"");
                 finalize_transcript(
-                    t.text,
+                    text,
                     t.confidence,
                     t.low_words,
                     res.duration_secs(),
@@ -1134,7 +1138,7 @@ fn finalize_transcript(
     // Meeting mode: a locked (hands-free) session's transcript becomes a
     // note instead of a paste.
     if settings.meeting_mode && was_locked {
-        crate::notes::add(local_datetime_title(), text.clone(), None);
+        let _ = crate::notes::add(local_datetime_title(), text.clone(), None);
         record_dictation(
             &text,
             &raw_out,
@@ -1246,7 +1250,7 @@ fn deliver_workflow(
             }
         }
         WorkflowDestination::Note => {
-            crate::notes::add(name.to_string(), text.clone(), None);
+            let _ = crate::notes::add(name.to_string(), text.clone(), None);
             (true, "noted", None)
         }
     };
@@ -1620,6 +1624,15 @@ pub fn install(app: AppHandle) {
         }
         if let Err(e) = whimpr_core::model_magic::validate_whisper_model(&path) {
             tracing::error!(target: "whimpr", "[whimpr:win] ASR model rejected: {e}");
+            if let Some(app) = APP.get() {
+                let _ = app.emit(
+                    "whimpr://model/corrupt",
+                    serde_json::json!({
+                        "path": path.display().to_string(),
+                        "error": e.to_string(),
+                    }),
+                );
+            }
             return;
         }
         match whimpr_asr::WhisperEngine::load(&path) {
@@ -1652,6 +1665,12 @@ pub fn install(app: AppHandle) {
 
 pub fn current_settings() -> whimpr_core::Settings {
     current_settings_inner()
+}
+
+/// Initialize settings OnceLock for smoke / unit tests (no Tauri AppHandle).
+pub fn bootstrap_for_tests() {
+    let settings = whimpr_core::Settings::load(&settings_path());
+    let _ = SETTINGS.set(Mutex::new(settings));
 }
 
 /// Apply new settings and rebuild the cloud providers (picks up model
@@ -1962,12 +1981,16 @@ pub fn get_pending() -> Option<crate::hotkey::PendingPayload> {
 /// clipboard, with the receipt saying so honestly. Upgrade path: remember
 /// the target HWND at record start and `SetForegroundWindow` it here
 /// before pasting (the stored `target_app` names which app to refocus).
-pub fn approve_pending() {
-    let item = PENDING
-        .get()
-        .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).take());
+pub fn approve_pending() -> Result<(), String> {
+    let item = match PENDING.get() {
+        Some(m) => m
+            .lock()
+            .map_err(|e| format!("pending lock poisoned: {e}"))?
+            .take(),
+        None => None,
+    };
     let Some(item) = item else {
-        return;
+        return Ok(());
     };
     let mut destination = item.destination;
     let mut note = None;
@@ -1992,13 +2015,16 @@ pub fn approve_pending() {
         item.duration_secs,
         note,
     );
+    Ok(())
 }
 
 /// Discard the held workflow result without executing it.
-pub fn reject_pending() {
+pub fn reject_pending() -> Result<(), String> {
     if let Some(m) = PENDING.get() {
-        *m.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *m.lock()
+            .map_err(|e| format!("pending lock poisoned: {e}"))? = None;
     }
+    Ok(())
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -2095,14 +2121,15 @@ pub fn export_voice_memory() -> Result<String, String> {
 }
 
 /// Wipe the correction log (the dictionary itself is managed separately).
-pub fn clear_voice_memory() {
+pub fn clear_voice_memory() -> Result<(), String> {
     if let Some(m) = VOICE_MEMORY.get() {
         m.lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .map_err(|e| format!("voice memory lock poisoned: {e}"))?
             .corrections
             .clear();
     }
     save_voice_memory();
+    Ok(())
 }
 
 /// ponytail: screen capture is macOS-only this pass (`screencapture -x`).

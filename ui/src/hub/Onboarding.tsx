@@ -288,11 +288,35 @@ export function Onboarding({
             Local
           </span>
         </div>
-        <p style={{ color: theme.textMuted, lineHeight: 1.5, margin: "0 0 24px" }}>
+        <p style={{ color: theme.textMuted, lineHeight: 1.5, margin: "0 0 16px" }}>
           {isWindows
             ? "Allow microphone access, confirm paste works in other apps, and install the speech model. Hold Right Ctrl to dictate."
             : "Grant these to WhimprFlow, in order. Each turns green the moment the OS applies it. Hold Fn to dictate."}
         </p>
+
+        {(() => {
+          const names = ["Permissions", "Microphone test", "Speech model", "Trial/License", "Ready"] as const;
+          const idx = !acc || !mic ? 0 : !micOk ? 1 : !modelOk ? 2 : !licensed ? 3 : 4;
+          return (
+            <div style={{ marginBottom: 20 }} aria-label={`Onboarding step ${idx + 1} of 5`}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12, color: theme.textFaint }}>
+                <span>
+                  Step {idx + 1}/5 · {names[idx]}
+                </span>
+              </div>
+              <div style={{ height: 6, borderRadius: 999, background: theme.track, overflow: "hidden" }}>
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${((idx + 1) / 5) * 100}%`,
+                    background: theme.accentDeep,
+                    transition: "width 0.25s ease",
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })()}
 
         <Step
           n={1}

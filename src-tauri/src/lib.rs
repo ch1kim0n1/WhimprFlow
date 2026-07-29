@@ -10,6 +10,7 @@ mod appctx;
 mod asr_idle;
 mod autolearn;
 mod data_wipe;
+mod extras;
 mod feedback;
 mod hotkey;
 mod licensing;
@@ -333,14 +334,14 @@ fn remove_workflow(name: String) -> Result<(), String> {
 /// Approve the workflow result currently held for approval (see the
 /// `whimpr://pending` event): executes its destination now.
 #[tauri::command]
-fn approve_pending() {
-    hotkey::approve_pending();
+fn approve_pending() -> Result<(), String> {
+    hotkey::approve_pending()
 }
 
 /// Discard the workflow result currently held for approval.
 #[tauri::command]
-fn reject_pending() {
-    hotkey::reject_pending();
+fn reject_pending() -> Result<(), String> {
+    hotkey::reject_pending()
 }
 
 /// Pipeline health for the Hub's health chips (ASR/local LLM/permissions).
@@ -378,8 +379,8 @@ fn export_voice_memory() -> Result<String, String> {
 
 /// Wipe the Voice Memory correction log.
 #[tauri::command]
-fn clear_voice_memory() {
-    hotkey::clear_voice_memory();
+fn clear_voice_memory() -> Result<(), String> {
+    hotkey::clear_voice_memory()
 }
 
 /// Screenshot into the app's captures folder; returns the image path
@@ -398,14 +399,15 @@ fn get_notes() -> Vec<notes::Note> {
 /// Append a note. `image_path` links a captured screenshot (optional  -  the
 /// Studio "Snap + note" flow passes the path `capture_screen` returned).
 #[tauri::command]
-fn add_note(title: String, text: String, image_path: Option<String>) {
-    notes::add(title, text, image_path);
+fn add_note(title: String, text: String, image_path: Option<String>) -> Result<(), String> {
+    notes::add(title, text, image_path)
 }
 
 /// Remove a note by its timestamp.
 #[tauri::command]
-fn remove_note(ts_unix: u64) {
+fn remove_note(ts_unix: u64) -> Result<(), String> {
     notes::remove(ts_unix);
+    Ok(())
 }
 
 /// Permission + capability status shown in the Hub.
@@ -593,6 +595,140 @@ fn dismiss_safe_mode() -> Result<(), String> {
     crate::watchdog::clear_launch_sentinel()
 }
 
+/// Download + install the previously successful version via the updater plugin.
+/// Falls back with an error when no previous version was recorded or the
+/// manifest for that version is missing (UI should offer the GitHub Releases link).
+#[tauri::command]
+async fn rollback_to_previous_version(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let prev = crate::watchdog::previous_version().ok_or_else(|| {
+        "no previous version recorded (this may be the first install)".to_string()
+    })?;
+
+    let candidates = [
+        format!("https://github.com/ch1kim0n1/WhimprFlow/releases/download/v{prev}/latest.json"),
+        format!("https://github.com/ch1kim0n1/WhimprFlow/releases/download/{prev}/latest.json"),
+        "https://github.com/ch1kim0n1/WhimprFlow/releases/latest/download/latest.json".to_string(),
+    ];
+
+    let mut last_err = format!("previous version {prev} is not available for auto-rollback");
+    for endpoint in candidates {
+        let Ok(url) = endpoint.parse() else {
+            continue;
+        };
+        let target = prev.clone();
+        let updater = match app
+            .updater_builder()
+            .endpoints(vec![url])
+            .map_err(|e| e.to_string())
+        {
+            Ok(b) => b
+                .version_comparator(move |_current, remote| remote.version.to_string() == target)
+                .build()
+                .map_err(|e| e.to_string()),
+            Err(e) => Err(e),
+        };
+        let updater = match updater {
+            Ok(u) => u,
+            Err(e) => {
+                last_err = e;
+                continue;
+            }
+        };
+        match updater.check().await {
+            Ok(Some(update)) => {
+                update
+                    .download_and_install(|_, _| {}, || {})
+                    .await
+                    .map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            Ok(None) => {
+                last_err = format!("no updater package found for version {prev}");
+            }
+            Err(e) => {
+                last_err = e.to_string();
+            }
+        }
+    }
+    Err(last_err)
+}
+
+#[tauri::command]
+fn get_previous_version() -> Option<String> {
+    crate::watchdog::previous_version()
+}
+
+#[tauri::command]
+fn export_settings() -> Result<String, String> {
+    extras::export_settings()
+}
+
+#[tauri::command]
+fn import_settings(json: String) -> Result<whimpr_core::Settings, String> {
+    extras::import_settings(json)
+}
+
+#[tauri::command]
+fn export_history(format: String) -> Result<String, String> {
+    extras::export_history(format)
+}
+
+#[tauri::command]
+fn list_installed_models() -> Vec<extras::InstalledModel> {
+    extras::list_installed_models()
+}
+
+#[tauri::command]
+fn set_active_model(path: String) -> Result<(), String> {
+    extras::set_active_model(path)
+}
+
+#[tauri::command]
+fn delete_model(path: String) -> Result<(), String> {
+    extras::delete_model(path)
+}
+
+#[tauri::command]
+fn list_input_devices() -> Vec<whimpr_audio::InputDevice> {
+    extras::list_input_devices()
+}
+
+#[tauri::command]
+fn set_input_device(name: String) -> Result<(), String> {
+    extras::set_input_device(name)
+}
+
+#[tauri::command]
+fn check_network() -> Result<bool, String> {
+    extras::check_network()
+}
+
+#[tauri::command]
+fn validate_api_key(
+    provider: String,
+    key: String,
+    base_url: Option<String>,
+) -> Result<bool, String> {
+    extras::validate_api_key(provider, key, base_url)
+}
+
+#[tauri::command]
+fn get_changelog() -> String {
+    extras::get_changelog()
+}
+
+#[tauri::command]
+fn get_keybindings() -> extras::KeyBindingsDto {
+    extras::get_keybindings()
+}
+
+#[tauri::command]
+fn get_rss_bytes() -> Option<u64> {
+    extras::current_rss_bytes()
+}
+
 /// Save (or clear, when empty) an API key in the OS keychain, then rebuild providers
 /// so it takes effect immediately.
 #[tauri::command]
@@ -635,10 +771,10 @@ fn hub_ready() {
     let _ = crate::watchdog::clear_launch_sentinel();
 }
 
-#[derive(serde::Serialize)]
-struct BuildInfo {
-    version: &'static str,
-    git_hash: &'static str,
+#[derive(Clone, serde::Serialize)]
+pub struct BuildInfo {
+    pub version: &'static str,
+    pub git_hash: &'static str,
 }
 
 #[tauri::command]
@@ -659,6 +795,41 @@ fn mic_self_test() -> Result<f32, String> {
     crate::mic_test::peak_rms_2s()
 }
 
+/// Direct (non-IPC) entry points for integration / smoke tests.
+pub mod smoke_api {
+    use super::*;
+
+    /// Load settings into the process OnceLock so get/set work without a full Tauri install.
+    pub fn bootstrap() {
+        hotkey::bootstrap_for_tests();
+        logging::init();
+    }
+
+    pub fn get_settings() -> whimpr_core::Settings {
+        super::get_settings()
+    }
+
+    pub fn set_settings(settings: whimpr_core::Settings) -> Result<whimpr_core::Settings, String> {
+        super::set_settings(settings)
+    }
+
+    pub fn get_entitlement() -> whimpr_core::Entitlement {
+        super::get_entitlement()
+    }
+
+    pub fn export_diagnostics() -> Result<String, String> {
+        super::export_diagnostics()
+    }
+
+    pub fn list_model_offers() -> Vec<crate::models::ModelOffer> {
+        super::list_model_offers()
+    }
+
+    pub fn get_build_info() -> BuildInfo {
+        super::get_build_info()
+    }
+}
+
 pub fn run() {
     logging::mark_process_start();
     logging::init();
@@ -666,6 +837,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_settings,
             set_settings,
@@ -725,8 +897,31 @@ pub fn run() {
             wipe_all_data,
             mic_self_test,
             dismiss_safe_mode,
+            rollback_to_previous_version,
+            get_previous_version,
+            export_settings,
+            import_settings,
+            export_history,
+            list_installed_models,
+            set_active_model,
+            delete_model,
+            list_input_devices,
+            set_input_device,
+            check_network,
+            validate_api_key,
+            get_changelog,
+            get_keybindings,
+            get_rss_bytes,
             list_crash_reports
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == HUB_LABEL && hotkey::current_settings().minimize_to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
             // Regular app: shows in the Dock with a normal, focusable main window.
             // (Can switch to a menu-bar-only accessory app later for the Wispr look.)
@@ -802,13 +997,33 @@ pub fn run() {
                 None::<&str>,
             )?;
             let sep1 = PredefinedMenuItem::separator(app)?;
-            let open = MenuItem::with_id(app, "open", "Open WhimprFlow", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit WhimprFlow", true, None::<&str>)?;
+            let show_hub = MenuItem::with_id(app, "show_hub", "Show Hub", true, None::<&str>)?;
+            let toggle_dictation = MenuItem::with_id(
+                app,
+                "toggle_dictation",
+                "Toggle dictation",
+                true,
+                None::<&str>,
+            )?;
+            let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
                 &[
-                    &header, &sep0, &sc_ptt, &sc_hf, &sc_cmd, &sc_cancel, &sc_paste, &sc_copy,
-                    &sc_undo, &sep1, &open, &quit,
+                    &header,
+                    &sep0,
+                    &sc_ptt,
+                    &sc_hf,
+                    &sc_cmd,
+                    &sc_cancel,
+                    &sc_paste,
+                    &sc_copy,
+                    &sc_undo,
+                    &sep1,
+                    &show_hub,
+                    &toggle_dictation,
+                    &settings_item,
+                    &quit,
                 ],
             )?;
 
@@ -816,11 +1031,22 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "open" | "sc_cancel" | "sc_paste" | "sc_copy" | "sc_undo" => {
+                    "show_hub" | "sc_cancel" | "sc_paste" | "sc_copy" | "sc_undo" => {
                         if let Some(w) = app.get_webview_window(HUB_LABEL) {
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
+                    }
+                    "settings" => {
+                        use tauri::Emitter;
+                        if let Some(w) = app.get_webview_window(HUB_LABEL) {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                            let _ = app.emit("whimpr://navigate", "settings");
+                        }
+                    }
+                    "toggle_dictation" => {
+                        hotkey::confirm_dictation();
                     }
                     "quit" => app.exit(0),
                     _ => {}

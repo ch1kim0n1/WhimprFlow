@@ -13,6 +13,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> · <a href="#capabilities">Capabilities</a> · <a href="#platform-notes">Platform Notes</a> ·
+  <a href="docs/ARCHITECTURE.md">Architecture</a> · <a href="docs/CONTRIBUTING.md">Contributing</a> ·
   <a href="docs/HELP.md">Help</a> · <a href="docs/PLATFORM-TEST-MATRIX.md">Test matrix</a> · <a href="docs/release/RELEASE-CHECKLIST.md">Release checklist</a>
 </p>
 
@@ -174,6 +175,22 @@ cargo run -p whimpr-license -- issue --email customer@example.com --tier pro
 
 Customers paste the `WF1....` key into Hub > License. See [docs/legal/](docs/legal/)
 for Privacy Policy, Terms, and EULA.
+
+## Documentation
+
+| Doc | Topic |
+| --- | --- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Crate graph, data flow, design decisions |
+| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | Dev setup, tests, PR checklist |
+| [docs/LINUX-WAYLAND.md](docs/LINUX-WAYLAND.md) | X11 vs Wayland hotkeys |
+| [docs/HELP.md](docs/HELP.md) | End-user help |
+| [docs/SPEC.md](docs/SPEC.md) | Product spec |
+| [docs/PLATFORM-TEST-MATRIX.md](docs/PLATFORM-TEST-MATRIX.md) | Platform test matrix |
+| [docs/release/RELEASE-CHECKLIST.md](docs/release/RELEASE-CHECKLIST.md) | Release checklist |
+| [docs/release/RELEASE-NOTES-v1.0.0.md](docs/release/RELEASE-NOTES-v1.0.0.md) | v1.0.0 release notes draft |
+| [docs/release/CODE_SIGNING.md](docs/release/CODE_SIGNING.md) | Signing secrets |
+| [docs/legal/](docs/legal/) | Privacy, Terms, EULA |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
 
 ## Development
 

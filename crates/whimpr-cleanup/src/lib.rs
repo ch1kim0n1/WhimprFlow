@@ -3,9 +3,9 @@
 //! On any failure the caller falls back to the raw transcript - cleanup is an
 //! enhancement, never a gate.
 
-mod http;
+pub mod http;
 
-pub use http::{rate, validate_base_url};
+pub use http::{client, rate, validate_base_url};
 
 use whimpr_core::cleanup::{
     build_command_messages, build_messages, CleanupContext, CleanupProvider, ProviderId,

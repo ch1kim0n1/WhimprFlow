@@ -33,6 +33,17 @@ impl WhisperEngine {
         language: Option<&str>,
         long_form: bool,
     ) -> anyhow::Result<Transcript> {
+        self.transcribe_opts_ex(pcm16k, language, long_form, true)
+    }
+
+    /// Like [`Self::transcribe_opts`], with optional Whisper punctuation.
+    pub fn transcribe_opts_ex(
+        &self,
+        pcm16k: &[f32],
+        language: Option<&str>,
+        long_form: bool,
+        auto_punctuate: bool,
+    ) -> anyhow::Result<Transcript> {
         let mut state = self
             .ctx
             .create_state()
@@ -93,8 +104,23 @@ impl WhisperEngine {
         }
 
         let (confidence, low_words) = aggregate_token_probs(&tokens);
+        let mut out = text.trim().to_string();
+        if !auto_punctuate {
+            out = out
+                .chars()
+                .filter(|c| {
+                    !matches!(
+                        c,
+                        ',' | '.' | ';' | ':' | '!' | '?' | '"' | '\u{201c}' | '\u{201d}'
+                    )
+                })
+                .collect::<String>()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+        }
         Ok(Transcript {
-            text: text.trim().to_string(),
+            text: out,
             confidence,
             low_words,
         })

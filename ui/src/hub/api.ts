@@ -78,6 +78,14 @@ export interface Settings {
   clear_clipboard_after_paste: boolean;
   max_ram_mb: number;
   unload_asr_after_idle_minutes: number;
+  minimize_to_tray: boolean;
+  input_device: string | null;
+  auto_punctuate: boolean;
+  custom_fillers: string[];
+  asr_model: string | null;
+  settings_version: number;
+  last_seen_version: string | null;
+  onboarding_step: number | null;
 }
 
 export interface Status {
@@ -155,6 +163,14 @@ export const DEFAULT_SETTINGS: Settings = {
   clear_clipboard_after_paste: true,
   max_ram_mb: 0,
   unload_asr_after_idle_minutes: 0,
+  minimize_to_tray: true,
+  input_device: null,
+  auto_punctuate: true,
+  custom_fillers: ["um", "uh", "er", "ah", "like"],
+  asr_model: null,
+  settings_version: 1,
+  last_seen_version: null,
+  onboarding_step: null,
 };
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -647,16 +663,20 @@ export async function removeWorkflow(name: string): Promise<void> {
 export async function approvePending(): Promise<void> {
   try {
     await invoke<void>("approve_pending");
-  } catch {
-    /* browser preview  no-op */
+  } catch (e) {
+    console.error("approvePending failed", e);
+    const { toast } = await import("./Toast");
+    toast.error(e instanceof Error ? e.message : String(e));
   }
 }
 
 export async function rejectPending(): Promise<void> {
   try {
     await invoke<void>("reject_pending");
-  } catch {
-    /* browser preview  no-op */
+  } catch (e) {
+    console.error("rejectPending failed", e);
+    const { toast } = await import("./Toast");
+    toast.error(e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -699,8 +719,10 @@ export async function exportVoiceMemory(): Promise<string> {
 export async function clearVoiceMemory(): Promise<void> {
   try {
     await invoke<void>("clear_voice_memory");
-  } catch {
-    /* browser preview  no-op */
+  } catch (e) {
+    console.error("clearVoiceMemory failed", e);
+    const { toast } = await import("./Toast");
+    toast.error(e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -730,8 +752,10 @@ export async function getNotes(): Promise<Note[]> {
 export async function addNote(title: string, text: string, imagePath: string | null = null): Promise<void> {
   try {
     await invoke<void>("add_note", { title, text, imagePath });
-  } catch {
-    /* browser preview  no-op */
+  } catch (e) {
+    console.error("addNote failed", e);
+    const { toast } = await import("./Toast");
+    toast.error(e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -750,6 +774,7 @@ export const EVENT_RECEIPT = "whimpr://receipt";
 export const EVENT_PENDING = "whimpr://pending";
 export const EVENT_CLOUD_UNAVAILABLE = "whimpr://cloud/unavailable";
 export const EVENT_SAFE_MODE = "whimpr://safe-mode";
+export const EVENT_LINUX_HOTKEYS_UNAVAILABLE = "whimpr://linux/hotkeys-unavailable";
 
 // Live provisional text while recording (streaming preview).
 export interface PartialTranscriptEvent {
@@ -806,12 +831,28 @@ export function onSafeMode(cb: () => void): Promise<() => void> {
   return listenEvent<unknown>(EVENT_SAFE_MODE, () => cb());
 }
 
+export function onLinuxHotkeysUnavailable(cb: (msg: string) => void): Promise<() => void> {
+  return listenEvent<string>(EVENT_LINUX_HOTKEYS_UNAVAILABLE, (p) => cb(typeof p === "string" ? p : ""));
+}
+
 export async function dismissSafeMode(): Promise<void> {
   try {
     await invoke("dismiss_safe_mode");
   } catch (e) {
     console.error("dismissSafeMode failed", e);
   }
+}
+
+export async function getPreviousVersion(): Promise<string | null> {
+  try {
+    return await invoke<string | null>("get_previous_version");
+  } catch {
+    return null;
+  }
+}
+
+export async function rollbackToPreviousVersion(): Promise<void> {
+  await invoke("rollback_to_previous_version");
 }
 
 // ── Auto-updater ────────────────────────────────────────────────────────────
@@ -849,5 +890,120 @@ export async function relaunchAfterUpdate(): Promise<void> {
     await relaunch();
   } catch {
     /* browser preview  no-op */
+  }
+}
+
+export async function exportSettings(): Promise<string> {
+  return invoke<string>("export_settings");
+}
+
+export async function importSettings(json: string): Promise<Settings> {
+  return invoke<Settings>("import_settings", { json });
+}
+
+export async function exportHistory(format: "json" | "txt"): Promise<string> {
+  return invoke<string>("export_history", { format });
+}
+
+export interface InstalledModel {
+  name: string;
+  path: string;
+  size_bytes: number;
+  active: boolean;
+}
+
+export async function listInstalledModels(): Promise<InstalledModel[]> {
+  try {
+    return await invoke<InstalledModel[]>("list_installed_models");
+  } catch {
+    return [];
+  }
+}
+
+export async function setActiveModel(path: string): Promise<void> {
+  await invoke("set_active_model", { path });
+}
+
+export async function deleteModel(path: string): Promise<void> {
+  await invoke("delete_model", { path });
+}
+
+export interface InputDevice {
+  name: string;
+  is_default: boolean;
+}
+
+export async function listInputDevices(): Promise<InputDevice[]> {
+  try {
+    return await invoke<InputDevice[]>("list_input_devices");
+  } catch {
+    return [];
+  }
+}
+
+export async function setInputDevice(name: string): Promise<void> {
+  await invoke("set_input_device", { name });
+}
+
+export async function checkNetwork(): Promise<boolean> {
+  try {
+    return await invoke<boolean>("check_network");
+  } catch {
+    return true;
+  }
+}
+
+export async function validateApiKey(
+  provider: string,
+  key: string,
+  baseUrl?: string | null,
+): Promise<boolean> {
+  return invoke<boolean>("validate_api_key", {
+    provider,
+    key,
+    baseUrl: baseUrl ?? null,
+  });
+}
+
+export async function getChangelog(): Promise<string> {
+  try {
+    return await invoke<string>("get_changelog");
+  } catch {
+    return "# Changelog\n\nSee CHANGELOG.md in the repository.";
+  }
+}
+
+export async function getKeybindings(): Promise<KeyBindings> {
+  try {
+    return await invoke<KeyBindings>("get_keybindings");
+  } catch {
+    return DEFAULT_KEYBINDINGS;
+  }
+}
+
+export async function getRssBytes(): Promise<number | null> {
+  try {
+    return await invoke<number | null>("get_rss_bytes");
+  } catch {
+    return null;
+  }
+}
+
+export async function setAutostart(enabled: boolean): Promise<void> {
+  try {
+    const mod = await import("@tauri-apps/plugin-autostart");
+    if (enabled) await mod.enable();
+    else await mod.disable();
+  } catch {
+    /* browser preview */
+  }
+}
+
+export async function isAutostartEnabled(): Promise<boolean> {
+  try {
+    const mod = await import("@tauri-apps/plugin-autostart");
+    return await mod.isEnabled();
+  } catch {
+    return false;
   }
 }

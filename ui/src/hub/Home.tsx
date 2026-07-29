@@ -6,16 +6,20 @@ import { Icon } from "./icons";
 import { listen } from "@tauri-apps/api/event";
 import {
   addDictionaryEntry,
+  checkNetwork,
   downloadAsrModel,
+  exportHistory,
   getHealth,
   getHistory,
   onReceipt,
+  reloadAsr,
   type Health,
   type HistoryItem,
   type ModelProgress,
   type Provenance,
   type ReceiptEvent,
 } from "./api";
+import { toast } from "./Toast";
 import { dayKey, dayLabel, fmtDuration, fmtNum, fmtTimeOfDay } from "./format";
 import { gsap, prefersReduced, scrollerEl, EASE, EASE_EXPO } from "./anim";
 import { detectPlatformSync } from "./platform";
@@ -209,11 +213,13 @@ function HealthChip({ ok, label, detail }: { ok: boolean; label: string; detail?
 
 function HealthChips({
   health,
+  networkOk,
   onDownloadModel,
   downloading,
   progressPct,
 }: {
   health: Health;
+  networkOk: boolean;
   onDownloadModel: () => void;
   downloading: boolean;
   progressPct: number | null;
@@ -223,11 +229,27 @@ function HealthChips({
     ? health.asr_model.replace(/\\/g, "/").split("/").pop()
     : null;
   return (
-    <div className="home-health" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 22 }}>
+    <div
+      className="home-health"
+      role="status"
+      aria-live="polite"
+      style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 22 }}
+    >
       <HealthChip ok={health.asr_ready} label="ASR model" detail={model} />
       <HealthChip ok={health.local_llm_ready} label="Local cleanup" />
       <HealthChip ok={health.microphone} label="Microphone" />
       <HealthChip ok={health.accessibility} label="Accessibility" />
+      <span
+        title={
+          networkOk
+            ? "Network online"
+            : "Cloud cleanup unavailable — dictations will use local cleanup."
+        }
+        role="status"
+        aria-label={networkOk ? "Network online" : "Network offline"}
+      >
+        <HealthChip ok={networkOk} label="Network" />
+      </span>
       {!health.asr_ready && (
         <button
           onClick={onDownloadModel}
@@ -621,6 +643,8 @@ export function Home() {
   const stats = useStats();
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [networkOk, setNetworkOk] = useState(true);
   const [health, setHealth] = useState<Health>({
     asr_ready: false,
     asr_model: null,
@@ -631,6 +655,7 @@ export function Home() {
   const [receipt, setReceipt] = useState<ReceiptEvent | null>(null);
   const [downloadingModel, setDownloadingModel] = useState(false);
   const [modelPct, setModelPct] = useState<number | null>(null);
+  const [corruptModel, setCorruptModel] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const isWindows = detectPlatformSync() === "windows";
   const pttLabel = isWindows ? "Right Ctrl" : "Fn";
@@ -644,6 +669,26 @@ export function Home() {
     load();
     const id = setInterval(load, 8000);
     return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQuery(query.trim().toLowerCase()), 200);
+    return () => window.clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    let alive = true;
+    const poll = () => {
+      void checkNetwork().then((ok) => {
+        if (alive) setNetworkOk(ok);
+      });
+    };
+    poll();
+    const id = setInterval(poll, 30_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
   }, []);
 
   // Health chips poll on the same cadence as history (permissions and model
@@ -678,6 +723,17 @@ export function Home() {
     void listen<ModelProgress>("whimpr://model/progress", (e) => {
       const { downloaded, total } = e.payload;
       if (total > 0) setModelPct(Math.min(100, Math.round((downloaded / total) * 100)));
+    }).then((fn) => {
+      un = fn;
+    });
+    return () => un?.();
+  }, []);
+
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void listen<{ path?: string; error?: string }>("whimpr://model/corrupt", (e) => {
+      setCorruptModel(e.payload?.path || "speech model");
+      toast.error("Speech model appears corrupt");
     }).then((fn) => {
       un = fn;
     });
@@ -751,7 +807,7 @@ export function Home() {
   }, [stats.total_words, stats.avg_wpm, stats.day_streak]);
 
   const today = stats.words_today;
-  const q = query.trim().toLowerCase();
+  const q = debouncedQuery;
   const filtered = q ? history.filter((h) => h.text.toLowerCase().includes(q)) : history;
   const groups = groupByDay(filtered);
   const lines = ["Speak it.", "See it typed."];
@@ -794,6 +850,7 @@ export function Home() {
 
         <HealthChips
           health={health}
+          networkOk={networkOk}
           onDownloadModel={() => void downloadModel()}
           downloading={downloadingModel}
           progressPct={modelPct}
@@ -814,14 +871,89 @@ export function Home() {
       {/* Insertion receipt (live event; dismissible) */}
       {receipt && <ReceiptBanner r={receipt} onDismiss={() => setReceipt(null)} />}
 
+      {corruptModel && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          style={{
+            position: "relative",
+            zIndex: 1,
+            marginTop: 16,
+            padding: "14px 16px",
+            borderRadius: 14,
+            border: "1px solid rgba(180, 35, 24, 0.35)",
+            background: "rgba(180, 35, 24, 0.1)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ fontSize: 13.5, color: theme.textStrong }}>
+            Speech model appears corrupt.
+          </div>
+          <Button
+            onClick={() => {
+              void (async () => {
+                setDownloadingModel(true);
+                try {
+                  await downloadAsrModel("base.en");
+                  await reloadAsr();
+                  setCorruptModel(null);
+                  toast.success("Model re-downloaded");
+                  setHealth(await getHealth());
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : String(e));
+                } finally {
+                  setDownloadingModel(false);
+                }
+              })();
+            }}
+          >
+            Re-download
+          </Button>
+        </div>
+      )}
+
       {/* Recent dictations. overflow stays visible so the add-to-dictionary
           popover can escape the card edge (no child paints past the radius). */}
       <div className="home-reveal" style={{ position: "relative", zIndex: 1, marginTop: receipt ? 16 : 48, background: theme.cardBg, border: `1px solid ${theme.border}`, borderRadius: 18, boxShadow: theme.shadow }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "16px 20px", borderBottom: `1px solid ${theme.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "16px 20px", borderBottom: `1px solid ${theme.border}`, flexWrap: "wrap" }}>
           <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.7, textTransform: "uppercase", color: theme.textFaint }}>Recent dictations</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, background: theme.cardBgSubtle, border: `1px solid ${theme.border}`, borderRadius: 9, padding: "6px 10px", minWidth: 180 }}>
-            <Icon name="search" size={15} style={{ color: theme.textFaint }} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search history" style={{ border: "none", outline: "none", background: "transparent", fontFamily: font.ui, fontSize: 13, color: theme.textBody, width: "100%" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              aria-label="Export transcripts"
+              onClick={() => {
+                void exportHistory("txt")
+                  .then((path) => toast.success(`Exported to ${path}`))
+                  .catch((e) => toast.error(e instanceof Error ? e.message : String(e)));
+              }}
+              style={{
+                cursor: "pointer",
+                border: `1px solid ${theme.border}`,
+                borderRadius: 9,
+                padding: "6px 10px",
+                fontSize: 12.5,
+                fontWeight: 600,
+                fontFamily: font.ui,
+                color: theme.textStrong,
+                background: theme.cardBgSubtle,
+              }}
+            >
+              Export transcripts
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, background: theme.cardBgSubtle, border: `1px solid ${theme.border}`, borderRadius: 9, padding: "6px 10px", minWidth: 180 }}>
+              <Icon name="search" size={15} style={{ color: theme.textFaint }} />
+              <input
+                aria-label="Search history"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search history"
+                style={{ border: "none", outline: "none", background: "transparent", fontFamily: font.ui, fontSize: 13, color: theme.textBody, width: "100%" }}
+              />
+            </div>
           </div>
         </div>
         <div style={{ padding: "4px 20px 16px" }}>

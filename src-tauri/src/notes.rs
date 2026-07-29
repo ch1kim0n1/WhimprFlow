@@ -111,8 +111,10 @@ fn next_ts(entries: &[Note], now: u64) -> u64 {
 }
 
 /// Append a note (timestamped now, unique) and persist.
-pub fn add(title: String, text: String, image_path: Option<String>) {
-    let mut guard = store().lock().unwrap_or_else(|e| e.into_inner());
+pub fn add(title: String, text: String, image_path: Option<String>) -> Result<(), String> {
+    let mut guard = store()
+        .lock()
+        .map_err(|e| format!("notes lock poisoned: {e}"))?;
     let ts_unix = next_ts(&guard.entries, unix_now());
     guard.entries.push(Note {
         ts_unix,
@@ -120,7 +122,7 @@ pub fn add(title: String, text: String, image_path: Option<String>) {
         text,
         image_path,
     });
-    let _ = guard.save(&notes_path());
+    guard.save(&notes_path()).map_err(|e| e.to_string())
 }
 
 /// Remove the note(s) with this timestamp and persist. Returns true if removed.

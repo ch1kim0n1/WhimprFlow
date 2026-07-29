@@ -13,6 +13,7 @@ import {
   type CorrectionEvent,
 } from "./api";
 import { EmptyState } from "./EmptyState";
+import { toast } from "./Toast";
 
 // Voice Memory pane: the auditable view over the encrypted local learning log.
 // Shows every learned correction, summarizes auto-learned vocabulary, exports
@@ -91,6 +92,8 @@ export function MemoryPane() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [query, setQuery] = useState("");
+  const [debounced, setDebounced] = useState("");
 
   const load = () =>
     Promise.all([getVoiceMemory(), getDictionary()]).then(([mem, dict]) => {
@@ -100,6 +103,18 @@ export function MemoryPane() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebounced(query.trim().toLowerCase()), 200);
+    return () => window.clearTimeout(t);
+  }, [query]);
+
+  const filtered = debounced
+    ? corrections.filter(
+        (ev) =>
+          ev.from.toLowerCase().includes(debounced) || ev.to.toLowerCase().includes(debounced),
+      )
+    : corrections;
 
   const doExport = async () => {
     setExporting(true);
@@ -127,6 +142,7 @@ export function MemoryPane() {
 
   const doClear = async () => {
     await clearVoiceMemory();
+    toast.success("Voice Memory cleared");
     setConfirmingClear(false);
     await load();
   };
@@ -153,17 +169,71 @@ export function MemoryPane() {
           <Icon name="book" size={15} style={{ color: theme.accentDeep }} />
           Learned corrections
           {corrections.length > 0 && (
-            <span style={{ color: theme.textFaint, fontWeight: 500 }}>({corrections.length})</span>
+            <span style={{ color: theme.textFaint, fontWeight: 500 }}>
+              ({debounced ? `${filtered.length} of ${corrections.length}` : corrections.length})
+            </span>
           )}
         </SectionTitle>
+        {corrections.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 12,
+              background: theme.cardBgSubtle,
+              border: `1px solid ${theme.border}`,
+              borderRadius: 10,
+              padding: "8px 10px",
+            }}
+          >
+            <Icon name="search" size={15} style={{ color: theme.textFaint }} />
+            <input
+              aria-label="Search Voice Memory"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search from or to…"
+              style={{
+                border: "none",
+                outline: "none",
+                background: "transparent",
+                fontFamily: font.ui,
+                fontSize: 13,
+                color: theme.textBody,
+                width: "100%",
+              }}
+            />
+            {query && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setQuery("")}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  color: theme.textFaint,
+                  padding: 2,
+                  display: "flex",
+                }}
+              >
+                <Icon name="close" size={15} />
+              </button>
+            )}
+          </div>
+        )}
         {corrections.length === 0 ? (
           <EmptyState
             title="Voice Memory is empty"
             body="Dictate with Memory mode on to build your searchable archive."
           />
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: "24px 4px", color: theme.textFaint, fontSize: 13.5 }}>
+            No corrections match “{query}”.
+          </div>
         ) : (
           <div>
-            {corrections.map((ev, i) => (
+            {filtered.map((ev, i) => (
               <CorrectionRow key={`${ev.ts_unix}-${i}`} ev={ev} />
             ))}
           </div>
