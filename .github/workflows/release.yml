@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to create or update, for example v0.1.0
+        description: Release tag to create or update, for example v1.0.0
         required: true
         type: string
 
@@ -21,41 +21,110 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-latest, windows-latest]
+        platform: [macos-latest, windows-latest, ubuntu-latest]
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential pkg-config cmake libclang-dev \
+            libdbus-1-dev libssl-dev libasound2-dev \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libx11-dev libxcb1-dev
+
+      - name: Require release signing secrets
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=0
+          require() {
+            local name="$1"
+            local value="$2"
+            if [ -z "${value}" ]; then
+              echo "::error::Missing required secret: ${name}"
+              missing=1
+            fi
+          }
+          require TAURI_SIGNING_PRIVATE_KEY "${TAURI_SIGNING_PRIVATE_KEY}"
+          require TAURI_SIGNING_PRIVATE_KEY_PASSWORD "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD}"
+          if [ "${RUNNER_OS}" = "macOS" ]; then
+            require APPLE_CERTIFICATE "${APPLE_CERTIFICATE}"
+            require APPLE_CERTIFICATE_PASSWORD "${APPLE_CERTIFICATE_PASSWORD}"
+            require APPLE_ID "${APPLE_ID}"
+            require APPLE_PASSWORD "${APPLE_PASSWORD}"
+            require APPLE_TEAM_ID "${APPLE_TEAM_ID}"
+            require APPLE_SIGNING_IDENTITY "${APPLE_SIGNING_IDENTITY}"
+          fi
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            require WINDOWS_CERTIFICATE "${WINDOWS_CERTIFICATE}"
+            require WINDOWS_CERTIFICATE_PASSWORD "${WINDOWS_CERTIFICATE_PASSWORD}"
+          fi
+          # Linux AppImage/deb: updater signing only (no Apple/Windows certs).
+          if [ "${missing}" -ne 0 ]; then
+            echo "See docs/release/CODE_SIGNING.md"
+            exit 1
+          fi
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # stable
 
       - name: Install frontend dependencies
         working-directory: ui
         run: npm ci
 
-      # Drafts make every tagged build reviewable before a human publishes it.
-      # Signing and notarization credentials can be added as repository secrets later.
-      # tauri.conf.json points at a self-signed "WhimprFlow Dev" identity for LOCAL
-      # builds (so TCC persists privacy grants across rebuilds  -  see
-      # src-tauri/setup-signing.sh). CI runners don't have that cert, so fall back
-      # to ad-hoc signing here. A future Developer ID secret can override both.
-      - name: Build and upload draft release assets
-        uses: tauri-apps/tauri-action@v0.6.2
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          cargo install cargo-cyclonedx --locked
+          cargo cyclonedx -f json --all --output-cdx
+          mv bom.json sbom.cdx.json || mv */bom.json sbom.cdx.json || true
+          ls -la sbom.cdx.json || cargo cyclonedx --format json --output-file sbom.cdx.json
+
+      - name: Install cargo-auditable
+        run: cargo install cargo-auditable --locked
+
+      - name: Build and upload release assets
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_SIGNING_IDENTITY: "-"
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         with:
           projectPath: ui
           tauriScript: npm exec tauri
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: WhimprFlow ${{ inputs.tag || github.ref_name }}
-          releaseDraft: true
+          releaseDraft: false
           generateReleaseNotes: true
+          updaterJsonPreferNsis: true
+          releaseAssets: sbom.cdx.json

@@ -4,12 +4,9 @@
 //! the Hub-facing settings/stats/dictionary/snippets/workflows/notes/voice-memory
 //! functions the Tauri commands call.
 //!
-//! ⚠️ UNVERIFIED: this module was written on macOS, without a Linux machine to build
-//! or run it against, mirroring `crate::win`'s structure (and its own precedent  -
-//! see that file's doc comment). The shared crates (audio, ASR, cleanup, core) are
-//! cross-platform, but this X11 glue has never been compiled. It is
-//! `cfg(target_os = "linux")` so it does not affect  -  and is not checked by  -  the
-//! macOS build. Treat it as a starting point, not a shipping port.
+//! Built and tested on Ubuntu (`ubuntu-latest` CI and WSL). The shared crates
+//! (audio, ASR, cleanup, core) are cross-platform; this X11 glue is compiled in
+//! the Linux CI matrix. Hotkeys need X11 or XWayland; see `docs/LINUX-WAYLAND.md`.
 //!
 //! Roadmap-15 parity scope on Linux (mirrors the macOS pipeline where the spec
 //! says cross-platform): provenance + `record_full` (raw/confidence/low_words),
@@ -34,7 +31,7 @@
 //! - **XGrabKey, not XRecordExtension.** A full XRecord tap (mirroring macOS's
 //!   listen-only CGEventTap or Windows' low-level keyboard hook) would see the key
 //!   globally without exclusively grabbing it from other apps. Wiring the XRecord
-//!   extension's setup blind (uncompiled) is meaningfully more involved and riskier
+//!   extension setup is meaningfully more involved and riskier
 //!   to get right than the core-protocol `XGrabKey`, so v1 uses `XGrabKey` on a
 //!   single hardcoded key (Right Ctrl, `XK_Control_R`) with `AnyModifier`. The
 //!   trade-off: this key is grabbed *exclusively* for WhimprFlow while held (no other
@@ -277,7 +274,7 @@ fn whisper_model_path(language: Option<&str>) -> std::path::PathBuf {
         // (likely an English-only .en model) rather than returning a
         // nonexistent path, which would leave ASR permanently unloaded.
         // Dictation stays alive  -  English-only  -  instead of bricked.
-        eprintln!(
+        tracing::info!(target: "whimpr",
             "[whimpr:linux] no multilingual whisper model found for language {:?}  -  falling \
              back to an English-only model; add a non-.en ggml model to the models \
              folder to transcribe this language",
@@ -332,7 +329,22 @@ fn set_asr(engine: Arc<whimpr_asr::WhisperEngine>, model_name: String) {
     let mut engine_guard = engine_slot.lock().unwrap_or_else(|e| e.into_inner());
     let mut name_guard = name_slot.lock().unwrap_or_else(|e| e.into_inner());
     *engine_guard = Some(engine);
-    *name_guard = Some(model_name);
+    *name_guard = Some(model_name.clone());
+    tracing::info!(target: "whimpr", model = %model_name, "ASR loaded (or reloaded)");
+}
+
+fn clear_asr_idle() {
+    let Some(slot) = ASR.get() else {
+        return;
+    };
+    let mut engine_guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+    if engine_guard.is_none() {
+        return;
+    }
+    *engine_guard = None;
+    if let Some(name_slot) = ASR_MODEL_NAME.get() {
+        *name_slot.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
 }
 
 /// The language to hand whisper for the CURRENTLY LOADED model: an
@@ -383,7 +395,7 @@ fn emit_bar(state: &'static str) {
 
 /// Emit the insertion receipt to both the overlay pill and the Hub.
 fn emit_receipt(app: &AppHandle, payload: ReceiptPayload) {
-    eprintln!(
+    tracing::info!(target: "whimpr",
         "[whimpr:linux] receipt: ok={} action={} words={}",
         payload.ok, payload.action, payload.words
     );
@@ -545,7 +557,7 @@ fn clean_transcript(raw: &str) -> CleanOutcome {
         .unwrap_or_default();
     let app_bundle_id = target_app();
     if let Some(app) = app_bundle_id.as_deref() {
-        eprintln!("[whimpr:linux] cleanup target app: {app}");
+        tracing::info!(target: "whimpr", "[whimpr:linux] cleanup target app: {app}");
     }
     // Code Mode: the code-dictation prompt variant, when the paste target is
     // an IDE/terminal and the user hasn't opted out. WM_CLASS values only
@@ -557,7 +569,7 @@ fn clean_transcript(raw: &str) -> CleanOutcome {
             .map(whimpr_core::cleanup::prompts::is_code_app)
             .unwrap_or(false);
     if code_mode {
-        eprintln!("[whimpr:linux] code mode active for this cleanup");
+        tracing::info!(target: "whimpr", "[whimpr:linux] code mode active for this cleanup");
     }
     let ctx = CleanupContext {
         level,
@@ -594,8 +606,19 @@ fn clean_transcript(raw: &str) -> CleanOutcome {
             String::new()
         }
     };
+    let cleanup_mode = match settings.cleanup_mode {
+        CleanupMode::OpenAi | CleanupMode::Anthropic
+            if !crate::licensing::cloud_cleanup_allowed() =>
+        {
+            tracing::info!(target: "whimpr",
+                "[whimpr:linux] cloud cleanup locked (license/trial required)  -  using local"
+            );
+            CleanupMode::Local
+        }
+        other => other,
+    };
     let (result, route, sent_to_cloud): (Option<anyhow::Result<String>>, String, bool) =
-        match settings.cleanup_mode {
+        match cleanup_mode {
             CleanupMode::OpenAi => {
                 // Clone the provider out of the lock (providers are cheap
                 // to clone) so rebuild_providers  -  settings / API-key
@@ -650,7 +673,7 @@ fn clean_transcript(raw: &str) -> CleanOutcome {
                 provenance.gate = "passed".to_string();
                 cleaned
             } else {
-                eprintln!("[whimpr:linux] cleanup gate rejected the edit  -  pasting raw");
+                tracing::info!(target: "whimpr", "[whimpr:linux] cleanup gate rejected the edit  -  pasting raw");
                 provenance.gate = "rejected".to_string();
                 raw_out.clone()
             }
@@ -659,14 +682,22 @@ fn clean_transcript(raw: &str) -> CleanOutcome {
             // Provider errored: the final text is raw ("raw"/"skipped" stand),
             // but sent_to_cloud stays honest  -  the transcript may have left
             // the machine even though no edit came back.
-            eprintln!("[whimpr:linux] cleanup failed ({e})  -  pasting raw");
+            tracing::info!(target: "whimpr", "[whimpr:linux] cleanup failed ({e})  -  pasting raw");
+            if matches!(
+                settings.cleanup_mode,
+                CleanupMode::OpenAi | CleanupMode::Anthropic
+            ) {
+                if let Some(app) = APP.get() {
+                    let _ = app.emit_to(HUB_LABEL, "whimpr://cloud/unavailable", format!("{e}"));
+                }
+            }
             raw_out.clone()
         }
         None => {
             if matches!(settings.cleanup_mode, CleanupMode::Local) {
-                eprintln!("[whimpr:linux] local cleanup model not wired yet  -  pasting raw");
+                tracing::info!(target: "whimpr", "[whimpr:linux] local cleanup model not wired yet  -  pasting raw");
             } else {
-                eprintln!("[whimpr:linux] cleanup provider has no API key  -  pasting raw");
+                tracing::info!(target: "whimpr", "[whimpr:linux] cleanup provider has no API key  -  pasting raw");
             }
             raw_out.clone()
         }
@@ -815,7 +846,7 @@ fn finalize_transcript(
     // so the user knows the workflow was bypassed.
     let mut workflow_note: Option<String> = None;
     if let Some((entry, payload)) = matched {
-        eprintln!("[whimpr:linux] WORKFLOW \"{}\" matched", entry.name);
+        tracing::info!(target: "whimpr", "[whimpr:linux] WORKFLOW \"{}\" matched", entry.name);
         // A trigger-only utterance runs the instruction over the whole
         // utterance rather than an empty payload.
         let input = if payload.is_empty() {
@@ -873,7 +904,7 @@ fn finalize_transcript(
                 return;
             }
             Err(e) => {
-                eprintln!(
+                tracing::info!(target: "whimpr",
                     "[whimpr:linux] workflow \"{}\" failed ({e})  -  falling back to a normal \
                      dictation so the utterance isn't lost",
                     entry.name
@@ -898,7 +929,7 @@ fn finalize_transcript(
     });
     let outcome = match snippet_expansion {
         Some(expansion) => {
-            eprintln!("[whimpr:linux] SNIPPET matched  -  pasting expansion directly");
+            tracing::info!(target: "whimpr", "[whimpr:linux] SNIPPET matched  -  pasting expansion directly");
             let expansion = if settings.safe_mode {
                 whimpr_core::redact_inappropriate_words(&expansion)
             } else {
@@ -919,7 +950,7 @@ fn finalize_transcript(
             // Clean the transcript (cloud LLM if configured).
             let outcome = clean_transcript(&raw);
             if outcome.final_text != raw {
-                eprintln!("[whimpr:linux] CLEANED:   \"{}\"", outcome.final_text);
+                tracing::info!(target: "whimpr", "[whimpr:linux] CLEANED:   \"{}\"", outcome.final_text);
             }
             outcome
         }
@@ -981,7 +1012,7 @@ fn finalize_transcript(
     // Paste into the target app; the receipt reports the outcome either way.
     let paste_result = paste_text(&text);
     if let Err(e) = &paste_result {
-        eprintln!("[whimpr:linux] paste failed: {e}");
+        tracing::info!(target: "whimpr", "[whimpr:linux] paste failed: {e}");
     }
     // Stash (raw, final) for the undo-last-cleanup path (no Linux hotkey for it
     // yet; see the LAST_TEXTS doc comment).
@@ -1108,6 +1139,15 @@ fn deliver_workflow(
 // ── The push-to-talk pipeline (double-tap lock mirrors crate::win) ──────────────
 
 fn on_ptt_down() {
+    crate::asr_idle::touch_dictation();
+    crate::feedback::play_start();
+    if ASR
+        .get()
+        .map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).is_none())
+        .unwrap_or(true)
+    {
+        maybe_reload_asr(current_settings_inner().language.as_deref());
+    }
     if LOCKED.load(Ordering::SeqCst) {
         // Third press: finalize the locked hands-free session (same path a
         // Stop-button click reaches via `confirm_dictation`).
@@ -1146,7 +1186,7 @@ fn on_ptt_down() {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner()) = Some(handle);
         }
-        Err(e) => eprintln!("[whimpr:linux] mic capture failed: {e}"),
+        Err(e) => tracing::info!(target: "whimpr", "[whimpr:linux] mic capture failed: {e}"),
     });
 }
 
@@ -1185,7 +1225,7 @@ fn finish_capture_and_finalize(was_locked: bool) {
             return;
         };
         let Some(res) = handle.and_then(|h| h.stop()) else {
-            eprintln!("[whimpr:linux] no audio captured");
+            tracing::info!(target: "whimpr", "[whimpr:linux] no audio captured");
             emit_receipt(
                 app,
                 ReceiptPayload {
@@ -1201,7 +1241,7 @@ fn finish_capture_and_finalize(was_locked: bool) {
             return;
         };
         let Some(asr) = current_asr() else {
-            eprintln!("[whimpr:linux] ASR not ready (model still loading or missing)");
+            tracing::info!(target: "whimpr", "[whimpr:linux] ASR not ready (model still loading or missing)");
             emit_receipt(
                 app,
                 ReceiptPayload {
@@ -1225,7 +1265,7 @@ fn finish_capture_and_finalize(was_locked: bool) {
         let lang = effective_language(settings.language.as_deref());
         match asr.transcribe_opts(&pcm, lang.as_deref(), long_form) {
             Ok(t) => {
-                eprintln!("[whimpr:linux] TRANSCRIPT: \"{}\"", t.text);
+                tracing::info!(target: "whimpr", "[whimpr:linux] TRANSCRIPT: \"{}\"", t.text);
                 finalize_transcript(
                     app,
                     t.text,
@@ -1236,7 +1276,7 @@ fn finish_capture_and_finalize(was_locked: bool) {
                 );
             }
             Err(e) => {
-                eprintln!("[whimpr:linux] ASR error: {e}");
+                tracing::info!(target: "whimpr", "[whimpr:linux] ASR error: {e}");
                 emit_receipt(
                     app,
                     ReceiptPayload {
@@ -1292,8 +1332,6 @@ pub fn cancel_dictation() {
 /// mapping table. There is no `XKeysymToKeycode` in the async/xcb-style protocol
 /// `x11rb` speaks, so this replicates it via `GetKeyboardMapping`.
 ///
-/// UNVERIFIED against the exact `x11rb` version this project pins: double-check
-/// `GetKeyboardMappingReply`'s field names/shape if this doesn't compile as-is.
 fn keycode_for_keysym<C: Connection>(conn: &C, target: u32) -> Option<u8> {
     let setup = conn.setup();
     let min_kc = setup.min_keycode;
@@ -1343,7 +1381,7 @@ fn run_hotkey_loop() -> anyhow::Result<()> {
     )?
     .check()?;
     conn.flush()?;
-    eprintln!("[whimpr:linux] X11 key grab installed (push-to-talk: Right Ctrl, X11 only  -  see linux.rs doc comment for Wayland)");
+    tracing::info!(target: "whimpr", "[whimpr:linux] X11 key grab installed (push-to-talk: Right Ctrl, X11 only  -  see linux.rs doc comment for Wayland)");
 
     loop {
         match conn.wait_for_event()? {
@@ -1357,7 +1395,7 @@ fn run_hotkey_loop() -> anyhow::Result<()> {
 fn spawn_hotkey_thread() {
     std::thread::spawn(|| {
         if let Err(e) = run_hotkey_loop() {
-            eprintln!(
+            tracing::info!(target: "whimpr",
                 "[whimpr:linux] X11 hotkey grab failed: {e}  -  is a display server reachable? \
                  This module only supports X11 (or XWayland); Wayland compositors' native \
                  protocol is not supported yet (see the module doc comment)."
@@ -1408,7 +1446,7 @@ fn save_voice_memory() {
     };
     let vm = m.lock().unwrap_or_else(|e| e.into_inner());
     if let Err(e) = vm.save_encrypted(&voice_memory_path(), key) {
-        eprintln!("[whimpr:linux] voice memory save failed: {e}");
+        tracing::info!(target: "whimpr", "[whimpr:linux] voice memory save failed: {e}");
     }
 }
 
@@ -1423,7 +1461,7 @@ pub fn install(app: AppHandle) {
     // `whisper_model_path()` can pick an English-only vs. multilingual model
     // file based on the configured language.
     let settings = whimpr_core::Settings::load(&settings_path());
-    eprintln!(
+    tracing::info!(target: "whimpr",
         "[whimpr:linux] cleanup mode: {:?}, level: {:?}, language: {:?}",
         settings.cleanup_mode, settings.cleanup_level, settings.language
     );
@@ -1462,7 +1500,7 @@ pub fn install(app: AppHandle) {
             let _ = VM_KEY.set(key);
         }
         None => {
-            eprintln!(
+            tracing::info!(target: "whimpr",
                 "[whimpr:linux] voice memory key unavailable (Secret Service?)  -  memory is \
                  in-memory only this run"
             );
@@ -1474,7 +1512,7 @@ pub fn install(app: AppHandle) {
     std::thread::spawn(move || {
         let path = whisper_model_path(language_for_model.as_deref());
         if !path.exists() {
-            eprintln!("[whimpr:linux] ASR model not found at {}", path.display());
+            tracing::info!(target: "whimpr", "[whimpr:linux] ASR model not found at {}", path.display());
             return;
         }
         match whimpr_asr::WhisperEngine::load(&path) {
@@ -1485,9 +1523,9 @@ pub fn install(app: AppHandle) {
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 set_asr(Arc::new(engine), name);
-                eprintln!("[whimpr:linux] ASR ready");
+                tracing::info!(target: "whimpr", "[whimpr:linux] ASR ready");
             }
-            Err(e) => eprintln!("[whimpr:linux] ASR load failed: {e}"),
+            Err(e) => tracing::info!(target: "whimpr", "[whimpr:linux] ASR load failed: {e}"),
         }
     });
     // Start the local cleanup worker in the background.
@@ -1495,9 +1533,10 @@ pub fn install(app: AppHandle) {
         let worker = crate::local_llm::spawn_default();
         let _ = LOCAL.set(Mutex::new(worker));
     });
+    crate::asr_idle::spawn_watcher(clear_asr_idle);
 
     spawn_hotkey_thread();
-    eprintln!("[whimpr:linux] installing X11 push-to-talk grab (Right Ctrl)");
+    tracing::info!(target: "whimpr", "[whimpr:linux] installing X11 push-to-talk grab (Right Ctrl)");
 }
 
 /// A snapshot of the current settings.
@@ -1551,17 +1590,17 @@ fn maybe_reload_asr(language: Option<&str>) {
     if loaded.as_deref() == Some(target_name.as_str()) {
         return; // the loaded model is already the best fit
     }
-    eprintln!(
+    tracing::info!(target: "whimpr",
         "[whimpr:linux] ASR model change: {}  ->  {target_name} (loading in the background)",
         loaded.as_deref().unwrap_or("<none>")
     );
     std::thread::spawn(move || match whimpr_asr::WhisperEngine::load(&target) {
         Ok(engine) => {
             set_asr(Arc::new(engine), target_name.clone());
-            eprintln!("[whimpr:linux] ASR model swapped in: {target_name}");
+            tracing::info!(target: "whimpr", "[whimpr:linux] ASR model swapped in: {target_name}");
         }
         Err(e) => {
-            eprintln!("[whimpr:linux] ASR hot-reload failed ({e})  -  keeping the current model")
+            tracing::info!(target: "whimpr", "[whimpr:linux] ASR hot-reload failed ({e})  -  keeping the current model")
         }
     });
 }
@@ -1579,7 +1618,7 @@ pub fn rebuild_providers() {
     });
     let anthropic = read_anthropic_key()
         .map(|k| whimpr_cleanup::AnthropicProvider::new(k, settings.anthropic_model.clone()));
-    eprintln!(
+    tracing::info!(target: "whimpr",
         "[whimpr:linux] cleanup providers: openai={}, anthropic={}",
         openai.is_some(),
         anthropic.is_some()
@@ -1654,22 +1693,25 @@ pub fn dictionary_entries() -> Vec<crate::hotkey::DictEntryDto> {
 }
 
 /// Add a manual dictionary entry and persist.
-pub fn dictionary_add(correct: String, mishears: Vec<String>) {
-    if let Some(m) = DICTIONARY.get() {
-        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
-        store.add(correct, mishears, whimpr_core::DictSource::Manual);
-        let _ = store.save(&dict_path());
-    }
+pub fn dictionary_add(correct: String, mishears: Vec<String>) -> Result<(), String> {
+    let Some(m) = DICTIONARY.get() else {
+        return Err("dictionary not initialized".into());
+    };
+    let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+    store.add(correct, mishears, whimpr_core::DictSource::Manual);
+    store.save(&dict_path()).map_err(|e| e.to_string())
 }
 
 /// Remove a dictionary entry by spelling and persist.
-pub fn dictionary_remove(correct: &str) {
-    if let Some(m) = DICTIONARY.get() {
-        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
-        if store.remove(correct) {
-            let _ = store.save(&dict_path());
-        }
+pub fn dictionary_remove(correct: &str) -> Result<(), String> {
+    let Some(m) = DICTIONARY.get() else {
+        return Err("dictionary not initialized".into());
+    };
+    let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+    if store.remove(correct) {
+        store.save(&dict_path()).map_err(|e| e.to_string())?;
     }
+    Ok(())
 }
 
 /// Add an AUTO-learned entry and persist. Marked ✨ auto in the UI.
@@ -1690,42 +1732,68 @@ pub fn snippet_entries() -> Vec<whimpr_core::SnippetEntry> {
 }
 
 /// Add (or, if the trigger already exists, replace) a snippet and persist.
-pub fn snippet_add(trigger: String, expansion: String) {
-    if let Some(m) = SNIPPETS.get() {
-        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
-        store.add(trigger, expansion);
-        let _ = store.save(&snippets_path());
-    }
+pub fn snippet_add(trigger: String, expansion: String) -> Result<(), String> {
+    let Some(m) = SNIPPETS.get() else {
+        return Err("snippets not initialized".into());
+    };
+    let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+    store.add(trigger, expansion);
+    store.save(&snippets_path()).map_err(|e| e.to_string())
 }
 
 /// Remove a snippet by its trigger and persist.
-pub fn snippet_remove(trigger: &str) {
-    if let Some(m) = SNIPPETS.get() {
-        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
-        if store.remove(trigger) {
-            let _ = store.save(&snippets_path());
-        }
+pub fn snippet_remove(trigger: &str) -> Result<(), String> {
+    let Some(m) = SNIPPETS.get() else {
+        return Err("snippets not initialized".into());
+    };
+    let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+    if store.remove(trigger) {
+        store.save(&snippets_path()).map_err(|e| e.to_string())?;
     }
+    Ok(())
 }
 
 /// Copy every user data store into a timestamped backup folder. Note
 /// voice_memory.enc is only decryptable on the same machine  -  its AES
 /// key lives in the user's keyring, not in the backup.
+fn backup_file_map() -> [(&'static str, std::path::PathBuf); 7] {
+    [
+        ("settings.json", settings_path()),
+        ("dictionary.json", dict_path()),
+        ("snippets.json", snippets_path()),
+        ("stats.json", stats_path()),
+        ("workflows.json", workflows_path()),
+        ("notes.json", notes_path()),
+        ("voice_memory.enc", voice_memory_path()),
+    ]
+}
+
 pub fn backup_data() -> Result<String, String> {
-    whimpr_core::backup::backup_files(
-        &[
-            ("settings.json", settings_path()),
-            ("dictionary.json", dict_path()),
-            ("snippets.json", snippets_path()),
-            ("stats.json", stats_path()),
-            ("workflows.json", workflows_path()),
-            ("notes.json", notes_path()),
-            ("voice_memory.enc", voice_memory_path()),
-        ],
-        &support_dir().join("backups"),
-    )
-    .map(|p| p.display().to_string())
-    .map_err(|e| e.to_string())
+    whimpr_core::backup::backup_files(&backup_file_map(), &support_dir().join("backups"))
+        .map(|p| p.display().to_string())
+        .map_err(|e| e.to_string())
+}
+
+pub fn list_backups() -> Result<Vec<String>, String> {
+    whimpr_core::backup::list_backups(&support_dir().join("backups"))
+        .map(|v| v.into_iter().map(|p| p.display().to_string()).collect())
+        .map_err(|e| e.to_string())
+}
+
+pub fn restore_backup(backup_dir: String) -> Result<usize, String> {
+    let path = std::path::PathBuf::from(backup_dir);
+    let root = support_dir().join("backups");
+    let canon_root = root.canonicalize().map_err(|e| e.to_string())?;
+    let canon = path.canonicalize().map_err(|e| e.to_string())?;
+    if !canon.starts_with(&canon_root) {
+        return Err("backup path is outside the WhimprFlow backups folder".into());
+    }
+    whimpr_core::backup::restore_files(&backup_file_map(), &canon).map_err(|e| e.to_string())
+}
+
+pub fn reload_asr() {
+    let lang = current_settings_inner().language;
+    maybe_reload_asr(lang.as_deref());
 }
 
 /// Pipeline health for the Hub's health chips.
@@ -1788,29 +1856,32 @@ pub fn workflow_add(
     instruction: String,
     destination: WorkflowDestination,
     require_approval: bool,
-) {
-    if let Some(m) = WORKFLOWS.get() {
-        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
-        store.add(
-            name,
-            trigger,
-            instruction,
-            destination,
-            require_approval,
-            unix_now(),
-        );
-        let _ = store.save(&workflows_path());
-    }
+) -> Result<(), String> {
+    let Some(m) = WORKFLOWS.get() else {
+        return Err("workflows not initialized".into());
+    };
+    let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+    store.add(
+        name,
+        trigger,
+        instruction,
+        destination,
+        require_approval,
+        unix_now(),
+    );
+    store.save(&workflows_path()).map_err(|e| e.to_string())
 }
 
 /// Remove a workflow by its name and persist.
-pub fn workflow_remove(name: &str) {
-    if let Some(m) = WORKFLOWS.get() {
-        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
-        if store.remove(name) {
-            let _ = store.save(&workflows_path());
-        }
+pub fn workflow_remove(name: &str) -> Result<(), String> {
+    let Some(m) = WORKFLOWS.get() else {
+        return Err("workflows not initialized".into());
+    };
+    let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+    if store.remove(name) {
+        store.save(&workflows_path()).map_err(|e| e.to_string())?;
     }
+    Ok(())
 }
 
 /// The workflow result currently held for approval, if any. Lets the

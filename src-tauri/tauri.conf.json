@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "WhimprFlow",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "com.whimpr.whimprflow",
   "build": {
-    "beforeDevCommand": "pnpm --dir ../ui dev",
+    "beforeDevCommand": "npm --prefix ../ui run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm --dir ../ui build",
+    "beforeBuildCommand": "npm --prefix ../ui run build",
     "frontendDist": "../ui/dist"
   },
   "app": {
@@ -14,12 +14,12 @@
     "macOSPrivateApi": true,
     "windows": [],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": ["app", "dmg", "nsis", "msi", "appimage", "deb"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -31,6 +31,24 @@
       "minimumSystemVersion": "14.0",
       "entitlements": "Entitlements.plist",
       "signingIdentity": "WhimprFlow Dev"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/ch1kim0n1/WhimprFlow/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ1MUYyQUU1MzMwNTdDMTgKUldRWWZBVXo1U29mUlk2azNRTTBWWmRjWkYwNmVwbXowYm96QW8rSkJTQmJ5WG42VzBUR2dnT1YK",
+      "dialog": true,
+      "windows": {
+        "installMode": "currentUser"
+      }
     }
   }
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { font } from "../tokens/values";
 import { theme } from "./theme";
 import { Button, Card } from "./ui";
+import { EmptyState } from "./EmptyState";
 import { Icon } from "./icons";
 import { addSnippet, getSnippets, removeSnippet, type SnippetEntry } from "./api";
 
@@ -207,11 +208,21 @@ export function SnippetsPane() {
 
       <Card pad={filtered.length ? 8 : 22}>
         {filtered.length === 0 ? (
-          <div style={{ padding: "30px 8px", textAlign: "center", color: theme.textFaint, fontSize: 13.5 }}>
-            {entries.length === 0
-              ? "No snippets yet. Add one to expand a short spoken trigger into a full phrase."
-              : `No snippets match "${query}".`}
-          </div>
+          entries.length === 0 ? (
+            <EmptyState
+              title="No snippets yet"
+              body="Snippets let you insert boilerplate text with a trigger."
+              action={
+                <Button variant="accent" size="sm" onClick={() => setAdding(true)}>
+                  Add snippet
+                </Button>
+              }
+            />
+          ) : (
+            <div style={{ padding: "30px 8px", textAlign: "center", color: theme.textFaint, fontSize: 13.5 }}>
+              No snippets match "{query}".
+            </div>
+          )
         ) : (
           <div style={{ padding: "4px 14px" }}>
             {filtered.map((e) => (

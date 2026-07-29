@@ -1,0 +1,27 @@
+{
+  "project": "WhimprFlow",
+  "last_run": "2026-07-29T04:20:00-05:00",
+  "wave": 3,
+  "verdict": "BLOCKED",
+  "next_verdict_target": "READY FOR INTERNAL TESTING",
+  "notes": "Wave 3 Tier 1–3 executed: idle ASR unload, max_ram→n_ctx, clipboard setting, cloud banner, EmptyState panes, mic test + trial/license onboarding, platform.ts, safe-mode dialog, Result IPC, cargo-auditable in release.yml, Vitest 25, licensing shell tests, sound feedback, dictionary I/O, workflow presets, crash opt-in, keybinding validate, i18n scaffolding. Still blocked on Apple/Windows code-signing certs.",
+  "tiers": {
+    "T1_inert_wiring": "DONE - items 1–8",
+    "T2_reliability_supply": "DONE - Result commands, auditable CI install, Updates/Onboarding/Settings tests (11), licensing.rs tests (4)",
+    "T3_commercial": "DONE - trial/license onboarding, sounds, dict import/export, workflow presets, crash reports, validate_keybindings, i18n scaffold (partial string coverage)"
+  },
+  "human_only_remaining": [
+    "Apple Developer ID + Windows code-signing secrets",
+    "Live checkout URL for whimprflow.com/buy",
+    "Full platform matrix on clean VMs",
+    "Manual idle-unload and cloud-banner soak tests"
+  ],
+  "verification": {
+    "whimpr_core_tests": "99 passed (Windows)",
+    "whimpr_tauri_licensing_tests": "4 passed (Windows)",
+    "whimpr_tauri_check": "passed (Windows)",
+    "whimpr_llm_worker_check": "passed (Windows)",
+    "npm_test": "25 passed",
+    "npm_build": "passed (Windows)"
+  }
+}

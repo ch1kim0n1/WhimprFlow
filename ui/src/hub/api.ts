@@ -57,6 +57,8 @@ export interface Settings {
   openai_base_url: string;
   anthropic_model: string;
   sound_on_start: boolean;
+  sound_on_complete: boolean;
+  crash_reporting_opt_in: boolean;
   safe_mode: boolean;
   // ASR language, as a whisper.cpp language code (e.g. "en", "es"). null means
   // auto-detect.
@@ -73,6 +75,9 @@ export interface Settings {
   meeting_mode: boolean;
   // Show live provisional text in the FlowBar while recording.
   streaming_preview: boolean;
+  clear_clipboard_after_paste: boolean;
+  max_ram_mb: number;
+  unload_asr_after_idle_minutes: number;
 }
 
 export interface Status {
@@ -136,15 +141,20 @@ export const DEFAULT_SETTINGS: Settings = {
   openai_base_url: "",
   anthropic_model: "claude-haiku-4-5",
   sound_on_start: true,
+  sound_on_complete: false,
+  crash_reporting_opt_in: false,
   safe_mode: false,
   language: null,
   keybindings: DEFAULT_KEYBINDINGS,
   style: DEFAULT_STYLE,
-  retention_days: null,
+  retention_days: 30,
   capsule: DEFAULT_CAPSULE,
   code_mode_auto: true,
   meeting_mode: false,
   streaming_preview: true,
+  clear_clipboard_after_paste: true,
+  max_ram_mb: 0,
+  unload_asr_after_idle_minutes: 0,
 };
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -160,11 +170,12 @@ export async function getSettings(): Promise<Settings> {
   }
 }
 
-export async function setSettings(settings: Settings): Promise<void> {
+export async function setSettings(settings: Settings): Promise<Settings> {
   try {
-    await invoke<void>("set_settings", { settings });
-  } catch {
-    /* browser preview  no-op */
+    return await invoke<Settings>("set_settings", { settings });
+  } catch (e) {
+    console.error("setSettings failed", e);
+    return settings;
   }
 }
 
@@ -286,16 +297,16 @@ export async function getDictionary(): Promise<DictEntry[]> {
 export async function addDictionaryEntry(correct: string, mishears: string[]): Promise<void> {
   try {
     await invoke<void>("add_dictionary_entry", { correct, mishears });
-  } catch {
-    /* browser preview  no-op */
+  } catch (e) {
+    console.error("addDictionaryEntry failed", e);
   }
 }
 
 export async function removeDictionaryEntry(correct: string): Promise<void> {
   try {
     await invoke<void>("remove_dictionary_entry", { correct });
-  } catch {
-    /* browser preview  no-op */
+  } catch (e) {
+    console.error("removeDictionaryEntry failed", e);
   }
 }
 
@@ -316,22 +327,126 @@ export async function getSnippets(): Promise<SnippetEntry[]> {
 export async function addSnippet(trigger: string, expansion: string): Promise<void> {
   try {
     await invoke<void>("add_snippet", { trigger, expansion });
-  } catch {
-    /* browser preview  no-op */
+  } catch (e) {
+    console.error("addSnippet failed", e);
   }
 }
 
 export async function removeSnippet(trigger: string): Promise<void> {
   try {
     await invoke<void>("remove_snippet", { trigger });
-  } catch {
-    /* browser preview  no-op */
+  } catch (e) {
+    console.error("removeSnippet failed", e);
   }
 }
 
 // Backup: user-initiated one-off action; surfaces real success/failure.
 export async function backupData(): Promise<string> {
   return invoke<string>("backup_data");
+}
+
+export type EntitlementKind = "licensed" | "trial" | "unlicensed";
+
+export interface Entitlement {
+  kind: EntitlementKind;
+  cloud_cleanup_allowed: boolean;
+  email: string | null;
+  tier: "pro" | "trial" | null;
+  expires_unix: number | null;
+  trial_days_remaining: number | null;
+  purchase_url: string;
+  message: string;
+}
+
+export async function getEntitlement(): Promise<Entitlement> {
+  try {
+    return await invoke<Entitlement>("get_entitlement");
+  } catch {
+    return {
+      kind: "unlicensed",
+      cloud_cleanup_allowed: false,
+      email: null,
+      tier: null,
+      expires_unix: null,
+      trial_days_remaining: null,
+      purchase_url: "https://whimprflow.com/buy",
+      message: "License status unavailable in browser preview.",
+    };
+  }
+}
+
+export async function activateLicense(key: string): Promise<Entitlement> {
+  return invoke<Entitlement>("activate_license", { key });
+}
+
+export async function clearLicense(): Promise<Entitlement> {
+  return invoke<Entitlement>("clear_license");
+}
+
+export async function startTrial(): Promise<Entitlement> {
+  return invoke<Entitlement>("start_trial");
+}
+
+export async function exportDiagnostics(): Promise<string> {
+  return invoke<string>("export_diagnostics");
+}
+
+export async function listCrashReports(): Promise<string[]> {
+  try {
+    return await invoke<string[]>("list_crash_reports");
+  } catch {
+    return [];
+  }
+}
+
+export async function wipeAllData(deleteModels = false): Promise<void> {
+  await invoke<void>("wipe_all_data", { deleteModels });
+}
+
+export async function micSelfTest(): Promise<number> {
+  return invoke<number>("mic_self_test");
+}
+
+export async function hubReady(): Promise<void> {
+  try {
+    await invoke("hub_ready");
+  } catch {
+    /* browser preview */
+  }
+}
+
+export interface BuildInfo {
+  version: string;
+  git_hash: string;
+}
+
+export async function getBuildInfo(): Promise<BuildInfo> {
+  try {
+    return await invoke<BuildInfo>("get_build_info");
+  } catch {
+    return { version: "1.0.0", git_hash: "dev" };
+  }
+}
+
+export async function getLastColdStartMs(): Promise<number | null> {
+  try {
+    return await invoke<number | null>("get_last_cold_start_ms");
+  } catch {
+    return null;
+  }
+}
+
+export async function listBackups(): Promise<string[]> {
+  try {
+    return await invoke<string[]>("list_backups");
+  } catch {
+    return [];
+  }
+}
+
+/** Restore JSON stores from a backup folder path returned by `listBackups`. */
+export async function restoreBackup(backupDir: string): Promise<number> {
+  return invoke<number>("restore_backup", { backupDir });
 }
 
 // Command Mode (manual test hook): runs the instruction-following rewrite
@@ -370,12 +485,57 @@ export async function getHealth(): Promise<Health> {
   }
 }
 
+export interface ModelOffer {
+  id: string;
+  file_name: string;
+  label: string;
+  size_bytes: number;
+  url: string;
+  sha256: string;
+}
+
+export async function listModelOffers(): Promise<ModelOffer[]> {
+  try {
+    return await invoke<ModelOffer[]>("list_model_offers");
+  } catch {
+    return [];
+  }
+}
+
+export async function asrModelInstalled(): Promise<boolean> {
+  try {
+    return await invoke<boolean>("asr_model_installed");
+  } catch {
+    return false;
+  }
+}
+
+/** Download recommended Whisper model; listen to `whimpr://model/progress` for bytes. */
+export async function downloadAsrModel(modelId?: string): Promise<string> {
+  return invoke<string>("download_asr_model", { modelId: modelId ?? null });
+}
+
+export async function reloadAsr(): Promise<void> {
+  try {
+    await invoke("reload_asr");
+  } catch (e) {
+    console.error("reloadAsr failed", e);
+  }
+}
+
+export interface ModelProgress {
+  file_name: string;
+  downloaded: number;
+  total: number;
+}
+
 // Privacy: strip stored dictation text from history (numeric stats stay).
 // Returns how many entries were cleared.
 export async function clearHistoryText(): Promise<number> {
   try {
     return await invoke<number>("clear_history_text");
-  } catch {
+  } catch (e) {
+    console.error("clearHistoryText failed", e);
     return 0;
   }
 }
@@ -426,6 +586,38 @@ export async function getWorkflows(): Promise<WorkflowEntry[]> {
   }
 }
 
+export interface WorkflowPreset {
+  name: string;
+  trigger: string;
+  instruction: string;
+  destination: WorkflowDestination;
+  require_approval: boolean;
+}
+
+export async function listWorkflowPresets(): Promise<WorkflowPreset[]> {
+  try {
+    return await invoke<WorkflowPreset[]>("list_workflow_presets");
+  } catch {
+    return [];
+  }
+}
+
+export async function exportDictionary(): Promise<string> {
+  return invoke<string>("export_dictionary");
+}
+
+export async function importDictionary(json: string, mode: "merge" | "replace"): Promise<number> {
+  return invoke<number>("import_dictionary", { json, mode });
+}
+
+export async function validateKeybindings(kb: KeyBindings): Promise<string[]> {
+  try {
+    return await invoke<string[]>("validate_keybindings", { kb });
+  } catch {
+    return [];
+  }
+}
+
 // Add or update (keyed by name); an update bumps the version and archives the
 // prior revision on the backend.
 export async function addWorkflow(
@@ -437,16 +629,16 @@ export async function addWorkflow(
 ): Promise<void> {
   try {
     await invoke<void>("add_workflow", { name, trigger, instruction, destination, requireApproval });
-  } catch {
-    /* browser preview  no-op */
+  } catch (e) {
+    console.error("addWorkflow failed", e);
   }
 }
 
 export async function removeWorkflow(name: string): Promise<void> {
   try {
     await invoke<void>("remove_workflow", { name });
-  } catch {
-    /* browser preview  no-op */
+  } catch (e) {
+    console.error("removeWorkflow failed", e);
   }
 }
 
@@ -556,6 +748,8 @@ export async function removeNote(tsUnix: number): Promise<void> {
 export const EVENT_TRANSCRIPT_PARTIAL = "whimpr://transcript/partial";
 export const EVENT_RECEIPT = "whimpr://receipt";
 export const EVENT_PENDING = "whimpr://pending";
+export const EVENT_CLOUD_UNAVAILABLE = "whimpr://cloud/unavailable";
+export const EVENT_SAFE_MODE = "whimpr://safe-mode";
 
 // Live provisional text while recording (streaming preview).
 export interface PartialTranscriptEvent {
@@ -602,4 +796,58 @@ export function onReceipt(cb: (p: ReceiptEvent) => void): Promise<() => void> {
 
 export function onPending(cb: (p: PendingEvent) => void): Promise<() => void> {
   return listenEvent<PendingEvent>(EVENT_PENDING, cb);
+}
+
+export function onCloudUnavailable(cb: (msg: string) => void): Promise<() => void> {
+  return listenEvent<string>(EVENT_CLOUD_UNAVAILABLE, cb);
+}
+
+export function onSafeMode(cb: () => void): Promise<() => void> {
+  return listenEvent<unknown>(EVENT_SAFE_MODE, () => cb());
+}
+
+export async function dismissSafeMode(): Promise<void> {
+  try {
+    await invoke("dismiss_safe_mode");
+  } catch (e) {
+    console.error("dismissSafeMode failed", e);
+  }
+}
+
+// ── Auto-updater ────────────────────────────────────────────────────────────
+// Wraps @tauri-apps/plugin-updater. In a plain browser (vite dev without the
+// shell) the import fails and checkForUpdate resolves to null so the Hub's
+// "Check for updates" button renders a friendly no-op message instead of
+// throwing.
+
+export interface AvailableUpdate {
+  version: string;
+  date?: string;
+  body?: string;
+  downloadAndInstall: () => Promise<void>;
+}
+
+export async function checkForUpdate(): Promise<AvailableUpdate | null> {
+  try {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const update = await check();
+    if (!update) return null;
+    return {
+      version: update.version,
+      date: update.date,
+      body: update.body,
+      downloadAndInstall: () => update.downloadAndInstall(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function relaunchAfterUpdate(): Promise<void> {
+  try {
+    const { relaunch } = await import("@tauri-apps/plugin-process");
+    await relaunch();
+  } catch {
+    /* browser preview  no-op */
+  }
 }

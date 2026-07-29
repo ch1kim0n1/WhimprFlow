@@ -13,6 +13,9 @@ pub mod asr;
 pub mod backup;
 pub mod cleanup;
 pub mod dictionary;
+pub mod json_store;
+pub mod license;
+pub mod model_magic;
 pub mod safety;
 pub mod settings;
 pub mod snippets;
@@ -25,6 +28,10 @@ pub mod workflows;
 pub use asr::{AsrEngine, AsrEngineId, Transcript};
 pub use cleanup::{CleanupContext, CleanupLevel, CleanupProvider, ProviderId, VocabEntry};
 pub use dictionary::{DictSource, DictionaryEntry, DictionaryStore};
+pub use license::{
+    evaluate_entitlement, verify_license_key, Entitlement, EntitlementKind, LicenseError,
+    LicensePayload, LicenseTier, PURCHASE_URL, TRIAL_DAYS,
+};
 pub use safety::redact_inappropriate_words;
 pub use settings::{
     CapsuleSettings, Chord, CleanupMode, Formality, Key, KeyBindings, Settings, StyleProfile,
@@ -36,4 +43,7 @@ pub use state::{
 pub use stats::{HistoryItem, Provenance, SessionRecord, StatsStore, StatsSummary};
 pub use types::{RecordMode, SessionId};
 pub use voice_memory::{CorrectionEvent, VoiceMemory};
-pub use workflows::{WorkflowDestination, WorkflowEntry, WorkflowRevision, WorkflowStore};
+pub use workflows::{
+    workflow_presets, WorkflowDestination, WorkflowEntry, WorkflowPreset, WorkflowRevision,
+    WorkflowStore,
+};

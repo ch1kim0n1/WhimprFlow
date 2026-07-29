@@ -12,6 +12,7 @@ import {
   getVoiceMemory,
   type CorrectionEvent,
 } from "./api";
+import { EmptyState } from "./EmptyState";
 
 // Voice Memory pane: the auditable view over the encrypted local learning log.
 // Shows every learned correction, summarizes auto-learned vocabulary, exports
@@ -156,10 +157,10 @@ export function MemoryPane() {
           )}
         </SectionTitle>
         {corrections.length === 0 ? (
-          <div style={{ padding: "26px 8px", textAlign: "center", color: theme.textFaint, fontSize: 13.5 }}>
-            No corrections yet. When you fix a transcript WhimprFlow pasted, it notices the change
-            and records the correction here.
-          </div>
+          <EmptyState
+            title="Voice Memory is empty"
+            body="Dictate with Memory mode on to build your searchable archive."
+          />
         ) : (
           <div>
             {corrections.map((ev, i) => (

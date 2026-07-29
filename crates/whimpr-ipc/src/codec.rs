@@ -122,4 +122,40 @@ mod tests {
         let res: Result<Option<ShellToSidecar>, _> = read_frame(&mut cursor);
         assert!(matches!(res, Err(CodecError::FrameTooLarge(_))));
     }
+
+    #[test]
+    fn rejects_ten_megabyte_claimed_frame() {
+        let bogus_len = (10 * 1024 * 1024_u32).to_le_bytes();
+        // 10 MiB is under MAX (16 MiB) so decoder may allocate — use MAX+ to prove gate.
+        let over = ((MAX_FRAME_LEN as u64) + 1) as u32;
+        let mut cursor = std::io::Cursor::new(over.to_le_bytes().to_vec());
+        let res: Result<Option<ShellToSidecar>, _> = read_frame(&mut cursor);
+        assert!(matches!(res, Err(CodecError::FrameTooLarge(_))));
+        let _ = bogus_len;
+    }
+
+    mod fuzz {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(64))]
+
+            #[test]
+            fn random_bytes_never_panic(
+                bytes in proptest::collection::vec(any::<u8>(), 0..4096)
+            ) {
+                let mut cursor = std::io::Cursor::new(bytes);
+                let _: Result<Option<ShellToSidecar>, _> = read_frame(&mut cursor);
+            }
+
+            #[test]
+            fn oversize_prefix_never_allocates_huge(extra in 1u32..1_000_000) {
+                let len = (MAX_FRAME_LEN as u32).saturating_add(extra);
+                let mut cursor = std::io::Cursor::new(len.to_le_bytes().to_vec());
+                let res: Result<Option<ShellToSidecar>, _> = read_frame(&mut cursor);
+                prop_assert!(matches!(res, Err(CodecError::FrameTooLarge(_))));
+            }
+        }
+    }
 }

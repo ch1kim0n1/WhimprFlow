@@ -12,10 +12,11 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a> · <a href="#capabilities">Capabilities</a> · <a href="#platform-notes">Platform Notes</a>
+  <a href="#quick-start">Quick Start</a> · <a href="#capabilities">Capabilities</a> · <a href="#platform-notes">Platform Notes</a> ·
+  <a href="docs/HELP.md">Help</a> · <a href="docs/PLATFORM-TEST-MATRIX.md">Test matrix</a> · <a href="docs/release/RELEASE-CHECKLIST.md">Release checklist</a>
 </p>
 
-> **Project status:** Active development. The core desktop workflow is implemented, but this repository is not yet a signed, installer-ready release. See [Platform Notes](#platform-notes) for current boundaries.
+> **Project status:** v1.0.0 commercial packaging. Local dictation works; public installers require Apple/Windows code-signing secrets (see [docs/release/CODE_SIGNING.md](docs/release/CODE_SIGNING.md)). Privacy Policy, Terms, and EULA live under [docs/legal/](docs/legal/).
 
 ## Product Preview
 
@@ -97,20 +98,22 @@ ui/node_modules/.bin/tauri build --bundles app
 
 **Prerequisites:** Rust stable with the MSVC toolchain, Node.js, npm or pnpm, CMake, LLVM/clang for `bindgen`, and Visual Studio Build Tools with the Desktop development with C++ workload.
 
-If `bindgen` does not discover clang automatically, set `LIBCLANG_PATH` to clang's `bin` directory.
-
 ```powershell
-cd ui
-pnpm install
-cd ..
-ui\node_modules\.bin\tauri.CMD dev
+# One-time: install LLVM if libclang is missing
+winget install --id LLVM.LLVM -e
+
+# Dev run (sets LIBCLANG_PATH, loads MSVC env, starts Vite + Tauri)
+.\dev.ps1
 ```
 
-For a release build:
+For a release build (NSIS/MSI installers):
 
 ```powershell
+$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"
 ui\node_modules\.bin\tauri.CMD build
 ```
+
+Push-to-talk on Windows is **Right Ctrl** (hold). Double-tap locks hands-free. Models go in `%APPDATA%\WhimprFlow\models\`.
 
 ## Models and Cleanup
 
@@ -140,9 +143,37 @@ Recommended inputs:
 | Platform | Current state |
 | --- | --- |
 | macOS 14+ | Reference development target. Apple Silicon can use Metal-backed local inference. Accessibility and Microphone permissions are required for the full desktop workflow. |
-| Windows 10/11 | Native build path and core workflow are present. Local Whisper and local cleanup are CPU-first today; GPU acceleration and additional production hardening remain future work. |
+| Windows 10/11 | Native build path and core workflow (Right Ctrl PTT, Whisper CPU, clipboard paste, Hub/Flow Bar). Local cleanup is CPU-first; GPU acceleration, Command Mode (UIA), and code-signed installers remain future work. |
 
 The project still needs packaging, code-signing, notarization, broader device testing, and additional error recovery before it should be treated as production software.
+
+## Updating WhimprFlow
+
+WhimprFlow includes an in-app auto-updater (Tauri's updater plugin). Open the Hub, go to **Settings > Updates**, and click **Check for updates**. If a newer release is available, the app downloads the signed installer, applies it, and relaunches.
+
+The updater verifies each download against a public key embedded in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`) and fetches the latest version manifest from the GitHub Releases download endpoint configured in the same file.
+
+### Signing setup (maintainers)
+
+Updater signing is already configured (`plugins.updater.pubkey` + GitHub secrets
+`TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`).
+
+Apple Developer ID notarization and Windows code-signing certificates are still
+required before strangers can install without Gatekeeper/SmartScreen blocks.
+Follow [docs/release/CODE_SIGNING.md](docs/release/CODE_SIGNING.md), then tag
+`v1.0.0` (or newer). Releases are published (not drafted) so `latest.json` is
+public for the in-app updater.
+
+### License keys (maintainers)
+
+Issue offline license keys with the private key in `secrets/` (never commit it):
+
+```bash
+cargo run -p whimpr-license -- issue --email customer@example.com --tier pro
+```
+
+Customers paste the `WF1....` key into Hub > License. See [docs/legal/](docs/legal/)
+for Privacy Policy, Terms, and EULA.
 
 ## Development
 
@@ -166,4 +197,7 @@ WhimprFlow is independent software. It is not affiliated with, endorsed by, or c
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Proprietary. See [LICENSE](LICENSE), [docs/legal/EULA.md](docs/legal/EULA.md),
+[docs/legal/TERMS.md](docs/legal/TERMS.md), and [docs/legal/PRIVACY.md](docs/legal/PRIVACY.md).
+
+Support: support@whimprflow.com · Buy: https://whimprflow.com/buy

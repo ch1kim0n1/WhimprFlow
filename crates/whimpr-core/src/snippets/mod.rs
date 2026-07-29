@@ -23,10 +23,7 @@ pub struct SnippetStore {
 impl SnippetStore {
     /// Load from `path`, returning an empty store if missing or unreadable.
     pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        crate::json_store::load_or_recover(path)
     }
 
     /// Persist to `path` (creating parent dirs).

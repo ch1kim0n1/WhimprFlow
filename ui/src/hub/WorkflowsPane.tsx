@@ -10,13 +10,16 @@ import {
   approvePending,
   getPending,
   getWorkflows,
+  listWorkflowPresets,
   onPending,
   rejectPending,
   removeWorkflow,
   type PendingEvent,
   type WorkflowDestination,
   type WorkflowEntry,
+  type WorkflowPreset,
 } from "./api";
+import { EmptyState } from "./EmptyState";
 
 // Voice Workflows: named spoken-trigger routines. Saying the trigger routes the
 // rest of the utterance through the workflow's instruction and sends the result
@@ -325,6 +328,7 @@ function EntryRow({
 
 export function WorkflowsPane() {
   const [entries, setEntries] = useState<WorkflowEntry[]>([]);
+  const [presets, setPresets] = useState<WorkflowPreset[]>([]);
   // null = form closed; an entry = editing it; "new" = blank add form.
   const [editing, setEditing] = useState<WorkflowEntry | "new" | null>(null);
   const [pending, setPending] = useState<PendingEvent | null>(null);
@@ -332,6 +336,7 @@ export function WorkflowsPane() {
   const load = () => getWorkflows().then(setEntries);
   useEffect(() => {
     void load();
+    void listWorkflowPresets().then(setPresets);
   }, []);
 
   // A workflow result held for approval. Seed from the shell's held slot on
@@ -390,6 +395,49 @@ export function WorkflowsPane() {
 
       {pending && <PendingCard pending={pending} onClear={() => setPending(null)} />}
 
+      {presets.length > 0 && (
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: theme.textStrong, marginBottom: 10 }}>
+            Templates
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {presets.map((p) => (
+              <div
+                key={p.name}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  padding: "8px 0",
+                  borderBottom: `1px solid ${theme.border}`,
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: theme.textStrong }}>{p.name}</div>
+                  <div style={{ fontSize: 12.5, color: theme.textMuted }}>{p.instruction}</div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    void addWorkflow(
+                      p.name,
+                      p.trigger,
+                      p.instruction,
+                      p.destination,
+                      p.require_approval,
+                    ).then(() => void load());
+                  }}
+                >
+                  Add
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {editing && (
         <EditForm
           initial={editing === "new" ? null : editing}
@@ -402,10 +450,15 @@ export function WorkflowsPane() {
 
       <Card pad={entries.length ? 8 : 22}>
         {entries.length === 0 ? (
-          <div style={{ padding: "30px 8px", textAlign: "center", color: theme.textFaint, fontSize: 13.5 }}>
-            No workflows yet. Add one to turn a spoken trigger into a routine: rewrite, then paste,
-            copy, or save to Studio notes.
-          </div>
+          <EmptyState
+            title="No workflows yet"
+            body="Workflows auto-format your dictation for specific apps."
+            action={
+              <Button variant="accent" size="sm" onClick={() => setEditing("new")}>
+                Add workflow
+              </Button>
+            }
+          />
         ) : (
           <div style={{ padding: "4px 14px" }}>
             {entries.map((e) => (

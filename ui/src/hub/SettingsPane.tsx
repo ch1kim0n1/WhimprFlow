@@ -1,18 +1,29 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { font } from "../tokens/values";
 import { theme, applyTheme, getStoredTheme, type ThemeMode } from "./theme";
 import { Button, Card, Dot, PageTitle, Segmented } from "./ui";
 import { Icon, type IconName } from "./icons";
 import {
+  backupData,
+  checkForUpdate,
+  exportDiagnostics,
+  listCrashReports,
+  listBackups,
+  relaunchAfterUpdate,
   requestAccessibility,
   requestInputMonitoring,
   requestMicrophone,
+  restoreBackup,
   setApiKey,
+  type AvailableUpdate,
   type CleanupLevel,
   type CleanupMode,
   type Settings,
   type Status,
 } from "./api";
+
+const APP_VERSION = "1.0.0";
 
 const MODES: { value: CleanupMode; label: string; hint: string }[] = [
   { value: "raw", label: "Raw", hint: "Paste exactly what you said" },
@@ -227,6 +238,91 @@ function GitHubMark() {
   );
 }
 
+type UpdateState = "idle" | "checking" | "none" | "available" | "downloading" | "ready" | "error";
+
+export function UpdatesCard() {
+  const [state, setState] = useState<UpdateState>("idle");
+  const [update, setUpdate] = useState<AvailableUpdate | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function check() {
+    setState("checking");
+    setMessage(null);
+    const found = await checkForUpdate();
+    if (!found) {
+      setState("none");
+      setMessage("You're on the latest version.");
+      return;
+    }
+    setUpdate(found);
+    setState("available");
+  }
+
+  async function downloadAndInstall() {
+    if (!update) return;
+    setState("downloading");
+    try {
+      await update.downloadAndInstall();
+      setState("ready");
+      setMessage("Update installed. Relaunching...");
+      await relaunchAfterUpdate();
+    } catch {
+      setState("error");
+      setMessage("Update failed. Try again or download it from GitHub.");
+    }
+  }
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <SectionTitle icon="sparkles" sub="Check for and install the latest WhimprFlow release.">
+        Updates
+      </SectionTitle>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        {state === "available" && update ? (
+          <Button variant="accent" onClick={downloadAndInstall}>
+            Install version {update.version}
+          </Button>
+        ) : (
+          <Button onClick={check} disabled={state === "checking" || state === "downloading"}>
+            {state === "checking"
+              ? "Checking..."
+              : state === "downloading"
+                ? "Downloading..."
+                : "Check for updates"}
+          </Button>
+        )}
+        {message && (
+          <span style={{ fontSize: 13, color: state === "error" ? theme.textMuted : theme.accentDeep }}>
+            {message}
+          </span>
+        )}
+        {state === "available" && update?.body && (
+          <details style={{ width: "100%", marginTop: 4 }}>
+            <summary style={{ cursor: "pointer", fontSize: 12.5, color: theme.textMuted }}>
+              Release notes
+            </summary>
+            <pre
+              style={{
+                whiteSpace: "pre-wrap",
+                fontFamily: font.ui,
+                fontSize: 12.5,
+                color: theme.textBody,
+                marginTop: 8,
+                background: theme.cardBgSubtle,
+                border: `1px solid ${theme.border}`,
+                borderRadius: 10,
+                padding: 12,
+              }}
+            >
+              {update.body}
+            </pre>
+          </details>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export function SettingsPane({
   settings,
   onChange,
@@ -238,10 +334,24 @@ export function SettingsPane({
   status: Status;
   refresh: () => void;
 }) {
+  const { t, i18n } = useTranslation();
   const [appearance, setAppearance] = useState<ThemeMode>(getStoredTheme());
   return (
     <div style={{ maxWidth: 720 }}>
-      <PageTitle>Settings</PageTitle>
+      <PageTitle>{t("settings.title")}</PageTitle>
+
+      <Card style={{ marginBottom: 16 }}>
+        <SectionTitle sub="Interface language. More locales can be contributed later.">
+          {t("settings.language")}
+        </SectionTitle>
+        <Segmented
+          options={[{ value: "en", label: t("settings.languageEnglish") }]}
+          value={(i18n.language ?? "en").startsWith("en") ? "en" : "en"}
+          onChange={(v) => {
+            void i18n.changeLanguage(v);
+          }}
+        />
+      </Card>
 
       <Card style={{ marginBottom: 16 }}>
         <SectionTitle sub="Switch between the warm light theme and a low-glare dark theme.">
@@ -272,6 +382,21 @@ export function SettingsPane({
         <div style={{ color: theme.textMuted, fontSize: 12.5, marginTop: 10 }}>
           {MODES.find((m) => m.value === settings.cleanup_mode)?.hint}
         </div>
+        {(settings.cleanup_mode === "open_ai" || settings.cleanup_mode === "anthropic") && (
+          <div style={{ color: theme.textMuted, fontSize: 12.5, marginTop: 8, lineHeight: 1.45 }}>
+            Cloud cleanup sends your raw transcript (and optional short app context) to the provider
+            you configure. Requires an active license or trial (Hub &gt; License). See the{" "}
+            <a
+              href="https://github.com/ch1kim0n1/WhimprFlow/blob/main/docs/legal/PRIVACY.md"
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: theme.accentDeep }}
+            >
+              Privacy Policy
+            </a>
+            .
+          </div>
+        )}
 
         <KeyField
           label="OpenAI API key"
@@ -425,19 +550,32 @@ export function SettingsPane({
       </Card>
 
       <Card style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, color: theme.textStrong }}>
-            <Icon name="keyboard" size={16} strokeWidth={1.8} />
-            Play a sound when recording starts
+        <SectionTitle icon="keyboard" sub="Optional cues when a dictation starts or finishes.">
+          Audio feedback
+        </SectionTitle>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ fontSize: 13.5, color: theme.textMuted }}>Sound when recording starts</div>
+            <Segmented
+              options={[
+                { value: "on", label: "On" },
+                { value: "off", label: "Off" },
+              ]}
+              value={settings.sound_on_start ? "on" : "off"}
+              onChange={(v) => onChange({ ...settings, sound_on_start: v === "on" })}
+            />
           </div>
-          <Segmented
-            options={[
-              { value: "on", label: "On" },
-              { value: "off", label: "Off" },
-            ]}
-            value={settings.sound_on_start ? "on" : "off"}
-            onChange={(v) => onChange({ ...settings, sound_on_start: v === "on" })}
-          />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ fontSize: 13.5, color: theme.textMuted }}>Sound when dictation completes</div>
+            <Segmented
+              options={[
+                { value: "on", label: "On" },
+                { value: "off", label: "Off" },
+              ]}
+              value={settings.sound_on_complete ? "on" : "off"}
+              onChange={(v) => onChange({ ...settings, sound_on_complete: v === "on" })}
+            />
+          </div>
         </div>
       </Card>
 
@@ -502,10 +640,113 @@ export function SettingsPane({
         </div>
       </Card>
 
+      <UpdatesCard />
+
+      <Card style={{ marginBottom: 16 }}>
+        <SectionTitle icon="sparkles" sub="Trade RAM for responsiveness. 0 means unlimited / never.">
+          Performance
+        </SectionTitle>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <label style={{ fontSize: 13, color: theme.textMuted }}>
+            Max local LLM RAM hint (MB)
+            <input
+              type="number"
+              min={0}
+              value={settings.max_ram_mb}
+              onChange={(e) =>
+                onChange({ ...settings, max_ram_mb: Math.max(0, Number(e.target.value) || 0) })
+              }
+              style={{
+                display: "block",
+                marginTop: 6,
+                width: 160,
+                padding: "8px 10px",
+                borderRadius: 10,
+                border: `1px solid ${theme.border}`,
+                background: theme.cardBgSubtle,
+                color: theme.textStrong,
+              }}
+            />
+          </label>
+          <label style={{ fontSize: 13, color: theme.textMuted }}>
+            Unload Whisper after idle (minutes)
+            <input
+              type="number"
+              min={0}
+              value={settings.unload_asr_after_idle_minutes}
+              onChange={(e) =>
+                onChange({
+                  ...settings,
+                  unload_asr_after_idle_minutes: Math.max(0, Number(e.target.value) || 0),
+                })
+              }
+              style={{
+                display: "block",
+                marginTop: 6,
+                width: 160,
+                padding: "8px 10px",
+                borderRadius: 10,
+                border: `1px solid ${theme.border}`,
+                background: theme.cardBgSubtle,
+                color: theme.textStrong,
+              }}
+            />
+          </label>
+          <ToggleRow
+            label="Clear clipboard after paste"
+            detail="When the clipboard was empty, remove the transcript so it does not linger in OS clipboard history."
+            value={settings.clear_clipboard_after_paste}
+            onChange={(v) => onChange({ ...settings, clear_clipboard_after_paste: v })}
+          />
+        </div>
+      </Card>
+
+      <CrashReportsCard
+        settings={settings}
+        onChange={onChange}
+      />
+
+      <DataBackupCard />
+
       <Card>
-        <SectionTitle sub="WhimprFlow is built in the open.">About</SectionTitle>
+        <SectionTitle sub="Version, legal, and purchase links.">About</SectionTitle>
+        <div style={{ color: theme.textMuted, fontSize: 13, marginBottom: 12 }}>
+          Version {APP_VERSION}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+          <a
+            href="https://github.com/ch1kim0n1/WhimprFlow/blob/main/docs/legal/PRIVACY.md"
+            target="_blank"
+            rel="noreferrer"
+            style={aboutLinkStyle()}
+          >
+            Privacy Policy
+          </a>
+          <a
+            href="https://github.com/ch1kim0n1/WhimprFlow/blob/main/docs/legal/TERMS.md"
+            target="_blank"
+            rel="noreferrer"
+            style={aboutLinkStyle()}
+          >
+            Terms of Service
+          </a>
+          <a
+            href="https://github.com/ch1kim0n1/WhimprFlow/blob/main/docs/legal/EULA.md"
+            target="_blank"
+            rel="noreferrer"
+            style={aboutLinkStyle()}
+          >
+            EULA
+          </a>
+          <a href="https://whimprflow.com/buy" target="_blank" rel="noreferrer" style={aboutLinkStyle()}>
+            Buy
+          </a>
+          <a href="mailto:support@whimprflow.com" style={aboutLinkStyle()}>
+            support@whimprflow.com
+          </a>
+        </div>
         <a
-          href="https://github.com/Blueturboguy07/WhimprFlow"
+          href="https://github.com/ch1kim0n1/WhimprFlow"
           target="_blank"
           rel="noreferrer"
           style={{ display: "inline-flex", alignItems: "center", gap: 9, borderRadius: 10, padding: "10px 13px", color: theme.textStrong, background: theme.cardBgSubtle, border: `1px solid ${theme.border}`, textDecoration: "none", fontSize: 13.5, fontWeight: 650 }}
@@ -515,5 +756,193 @@ export function SettingsPane({
         </a>
       </Card>
     </div>
+  );
+}
+
+function aboutLinkStyle(): React.CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    borderRadius: 10,
+    padding: "8px 12px",
+    color: theme.textStrong,
+    background: theme.cardBgSubtle,
+    border: `1px solid ${theme.border}`,
+    textDecoration: "none",
+    fontSize: 13,
+    fontWeight: 600,
+  };
+}
+
+function backupLabel(path: string): string {
+  const base = path.replace(/\\/g, "/").split("/").pop() ?? path;
+  const secs = Number(base);
+  if (!Number.isFinite(secs) || secs <= 0) return base;
+  try {
+    return new Date(secs * 1000).toLocaleString();
+  } catch {
+    return base;
+  }
+}
+
+function CrashReportsCard({
+  settings,
+  onChange,
+}: {
+  settings: Settings;
+  onChange: (s: Settings) => void;
+}) {
+  const [paths, setPaths] = useState<string[]>([]);
+  useEffect(() => {
+    void listCrashReports().then(setPaths);
+  }, [settings.crash_reporting_opt_in]);
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <SectionTitle
+        icon="shield"
+        sub="Crash reports stay on this device unless you export and share them."
+      >
+        Crash reports
+      </SectionTitle>
+      <ToggleRow
+        label="Write local crash reports on panic"
+        detail="Off by default. When on, panics write crash-<timestamp>.txt under the app support folder."
+        value={settings.crash_reporting_opt_in}
+        onChange={(v) => onChange({ ...settings, crash_reporting_opt_in: v })}
+      />
+      {paths.length === 0 ? (
+        <div style={{ color: theme.textMuted, fontSize: 13, marginTop: 10 }}>No crash reports yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+          {paths.slice(0, 8).map((p) => (
+            <div
+              key={p}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                fontSize: 12.5,
+                color: theme.textMuted,
+              }}
+            >
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  void exportDiagnostics();
+                }}
+              >
+                Export
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function DataBackupCard() {
+  const [paths, setPaths] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const refresh = () => void listBackups().then(setPaths);
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const onDiagnostics = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const path = await exportDiagnostics();
+      setMsg(`Diagnostics saved to ${path}`);
+    } catch (e) {
+      setMsg(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onBackup = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const dest = await backupData();
+      setMsg(`Saved to ${dest}`);
+      refresh();
+    } catch (e) {
+      setMsg(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onRestore = async (path: string) => {
+    if (!window.confirm("Restore this backup? Current settings, dictionary, snippets, and workflows will be overwritten.")) {
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      const n = await restoreBackup(path);
+      setMsg(`Restored ${n} file${n === 1 ? "" : "s"}. Quit and reopen if anything looks stale.`);
+    } catch (e) {
+      setMsg(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <SectionTitle
+        icon="archive"
+        sub="Copy settings, dictionary, snippets, workflows, and history into a timestamped folder. Keeps the newest 20 backups."
+      >
+        Data backup
+      </SectionTitle>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+        <Button variant="accent" size="sm" disabled={busy} onClick={() => void onBackup()}>
+          {busy ? "Working…" : "Back up now"}
+        </Button>
+        <Button variant="ghost" size="sm" disabled={busy} onClick={() => void onDiagnostics()}>
+          Export diagnostics
+        </Button>
+      </div>
+      {paths.length === 0 ? (
+        <div style={{ color: theme.textMuted, fontSize: 13 }}>No backups yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {paths.slice(0, 8).map((p) => (
+            <div
+              key={p}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                padding: "8px 10px",
+                borderRadius: 10,
+                background: theme.cardBgSubtle,
+                border: `1px solid ${theme.border}`,
+              }}
+            >
+              <div style={{ fontSize: 13, color: theme.textStrong, fontWeight: 550 }}>{backupLabel(p)}</div>
+              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void onRestore(p)}>
+                Restore
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      {msg && (
+        <div style={{ color: theme.textMuted, fontSize: 12.5, marginTop: 12, lineHeight: 1.4 }}>{msg}</div>
+      )}
+    </Card>
   );
 }

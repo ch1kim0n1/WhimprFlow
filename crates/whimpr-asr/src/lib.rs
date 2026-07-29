@@ -17,10 +17,7 @@ pub struct WhisperEngine {
 impl WhisperEngine {
     /// Load a GGML/GGUF whisper model from `model_path`.
     pub fn load(model_path: &Path) -> anyhow::Result<Self> {
-        let path = model_path
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("model path is not valid UTF-8"))?;
-        let ctx = WhisperContext::new_with_params(path, WhisperContextParameters::default())
+        let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())
             .map_err(|e| anyhow::anyhow!("failed to load whisper model: {e}"))?;
         Ok(Self { ctx })
     }
@@ -62,32 +59,35 @@ impl WhisperEngine {
             .full(params, pcm16k)
             .map_err(|e| anyhow::anyhow!("whisper full: {e}"))?;
 
-        let n = state
-            .full_n_segments()
-            .map_err(|e| anyhow::anyhow!("whisper n_segments: {e}"))?;
+        let n = state.full_n_segments();
         // Special tokens (timestamps, EOT, ...) have ids >= eot; they carry no
         // spoken text and would skew the confidence average.
         let eot = self.ctx.token_eot();
         let mut text = String::new();
         let mut tokens: Vec<(String, f32)> = Vec::new();
         for i in 0..n {
-            if let Ok(seg) = state.full_get_segment_text(i) {
-                text.push_str(&seg);
+            let Some(seg) = state.get_segment(i) else {
+                continue;
+            };
+            if let Ok(seg_text) = seg.to_str_lossy() {
+                text.push_str(&seg_text);
             }
-            let n_tok = state.full_n_tokens(i).unwrap_or(0);
+            let n_tok = seg.n_tokens();
             for t in 0..n_tok {
-                match state.full_get_token_id(i, t) {
-                    Ok(id) if id < eot => {}
-                    _ => continue,
+                let Some(tok) = seg.get_token(t) else {
+                    continue;
+                };
+                if tok.token_id() >= eot {
+                    continue;
                 }
                 // ponytail: lossy token text means a multi-byte char split across
                 // BPE tokens surfaces as U+FFFD inside low_words; upgrade path is
                 // assembling raw token bytes per word and decoding at boundaries.
-                let piece = match state.full_get_token_text_lossy(i, t) {
-                    Ok(p) => p,
+                let piece = match tok.to_str_lossy() {
+                    Ok(p) => p.into_owned(),
                     Err(_) => continue,
                 };
-                let prob = state.full_get_token_prob(i, t).unwrap_or(0.0);
+                let prob = tok.token_probability();
                 tokens.push((piece, prob));
             }
         }

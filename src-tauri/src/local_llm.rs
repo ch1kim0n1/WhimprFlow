@@ -13,9 +13,24 @@ pub struct LocalWorker {
 }
 
 impl LocalWorker {
-    pub fn spawn(worker_bin: &Path, model: &Path) -> anyhow::Result<Self> {
-        let mut child = Command::new(worker_bin)
-            .arg(model)
+    pub fn spawn(worker_bin: &Path, model: &Path, max_ram_mb: u32) -> anyhow::Result<Self> {
+        let mut cmd = Command::new(worker_bin);
+        cmd.arg(model);
+        if max_ram_mb > 0 {
+            // ~8 bytes/token conservative for q4_K_M; clamp to a sane window.
+            let n_ctx = ((max_ram_mb as u64) * 1024 / 8).clamp(512, 4096);
+            tracing::info!(
+                target: "whimpr",
+                max_ram_mb,
+                n_ctx,
+                "local LLM worker context bounded by max_ram_mb"
+            );
+            cmd.arg("--n_ctx").arg(n_ctx.to_string());
+            cmd.arg("--n-predict").arg("512");
+        } else {
+            tracing::info!(target: "whimpr", "local LLM worker spawning with default context");
+        }
+        let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -107,7 +122,7 @@ pub fn worker_bin_path() -> Option<PathBuf> {
             .unwrap_or_default()
             .join("target/release")
             .join(exe_name);
-        return dev.exists().then_some(dev);
+        dev.exists().then_some(dev)
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -139,16 +154,17 @@ pub fn spawn_default() -> Option<LocalWorker> {
     let bin = worker_bin_path()?;
     let model = model_path();
     if !model.exists() {
-        eprintln!("[whimpr] local model not found at {}", model.display());
+        tracing::info!(target: "whimpr", "[whimpr] local model not found at {}", model.display());
         return None;
     }
-    match LocalWorker::spawn(&bin, &model) {
+    let max_ram_mb = crate::hotkey::current_settings().max_ram_mb;
+    match LocalWorker::spawn(&bin, &model, max_ram_mb) {
         Ok(w) => {
-            eprintln!("[whimpr] local LLM worker started ({})", bin.display());
+            tracing::info!(target: "whimpr", "[whimpr] local LLM worker started ({})", bin.display());
             Some(w)
         }
         Err(e) => {
-            eprintln!("[whimpr] local LLM worker failed to start: {e}");
+            tracing::info!(target: "whimpr", "[whimpr] local LLM worker failed to start: {e}");
             None
         }
     }

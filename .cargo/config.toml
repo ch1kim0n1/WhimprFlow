@@ -1,0 +1,5 @@
+# Workspace cargo config.
+#
+# Do NOT set WHISPER_DONT_GENERATE_BINDINGS here. The crate's pregenerated
+# bindings are Linux/glibc sized and fail MSVC layout tests (_IO_FILE, etc.).
+# On Windows, regenerate with libclang (see scripts/win-cargo.cmd / dev.ps1).

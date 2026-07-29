@@ -344,7 +344,7 @@ mod imp {
             // (likely an English-only .en model) rather than returning a
             // nonexistent path, which would leave ASR permanently unloaded.
             // Dictation stays alive  -  English-only  -  instead of bricked.
-            eprintln!(
+            tracing::info!(target: "whimpr",
                 "[whimpr] no multilingual whisper model found for language {:?}  -  falling \
                  back to an English-only model; add a non-.en ggml model to the models \
                  folder to transcribe this language",
@@ -477,7 +477,22 @@ mod imp {
         let mut engine_guard = engine_slot.lock().unwrap_or_else(|e| e.into_inner());
         let mut name_guard = name_slot.lock().unwrap_or_else(|e| e.into_inner());
         *engine_guard = Some(engine);
-        *name_guard = Some(model_name);
+        *name_guard = Some(model_name.clone());
+        tracing::info!(target: "whimpr", model = %model_name, "ASR loaded (or reloaded)");
+    }
+
+    fn clear_asr_idle() {
+        let Some(slot) = ASR.get() else {
+            return;
+        };
+        let mut engine_guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+        if engine_guard.is_none() {
+            return;
+        }
+        *engine_guard = None;
+        if let Some(name_slot) = ASR_MODEL_NAME.get() {
+            *name_slot.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        }
     }
 
     /// The language to hand whisper for the CURRENTLY LOADED model: an
@@ -562,12 +577,14 @@ mod imp {
     fn paste_last_transcript() {
         match latest_transcript() {
             Some(text) if !text.is_empty() => {
-                eprintln!("[whimpr] hotkey: paste last transcript (Cmd+Shift+V)");
+                tracing::info!(target: "whimpr", "[whimpr] hotkey: paste last transcript (Cmd+Shift+V)");
                 if let Err(e) = crate::paste::paste_text(&text) {
-                    eprintln!("[whimpr] paste-last-transcript failed: {e}");
+                    tracing::info!(target: "whimpr", "[whimpr] paste-last-transcript failed: {e}");
                 }
             }
-            _ => eprintln!("[whimpr] paste-last-transcript: no transcript yet"),
+            _ => {
+                tracing::info!(target: "whimpr", "[whimpr] paste-last-transcript: no transcript yet")
+            }
         }
     }
 
@@ -576,13 +593,15 @@ mod imp {
     fn copy_last_transcript() {
         match latest_transcript() {
             Some(text) if !text.is_empty() => {
-                eprintln!("[whimpr] hotkey: copy last transcript (Cmd+Shift+C)");
+                tracing::info!(target: "whimpr", "[whimpr] hotkey: copy last transcript (Cmd+Shift+C)");
                 use arboard::Clipboard;
                 if let Err(e) = Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
-                    eprintln!("[whimpr] copy-last-transcript failed: {e}");
+                    tracing::info!(target: "whimpr", "[whimpr] copy-last-transcript failed: {e}");
                 }
             }
-            _ => eprintln!("[whimpr] copy-last-transcript: no transcript yet"),
+            _ => {
+                tracing::info!(target: "whimpr", "[whimpr] copy-last-transcript: no transcript yet")
+            }
         }
     }
 
@@ -599,15 +618,17 @@ mod imp {
             .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone());
         match pair {
             Some((raw, final_pasted)) if raw != final_pasted => {
-                eprintln!("[whimpr] hotkey: undo last cleanup edit (Cmd+Shift+Z)");
+                tracing::info!(target: "whimpr", "[whimpr] hotkey: undo last cleanup edit (Cmd+Shift+Z)");
                 if let Err(e) = crate::paste::paste_text(&raw) {
-                    eprintln!("[whimpr] undo-last-cleanup failed: {e}");
+                    tracing::info!(target: "whimpr", "[whimpr] undo-last-cleanup failed: {e}");
                 }
             }
             Some(_) => {
-                eprintln!("[whimpr] undo-last-cleanup: cleanup made no changes, nothing to undo")
+                tracing::info!(target: "whimpr", "[whimpr] undo-last-cleanup: cleanup made no changes, nothing to undo")
             }
-            None => eprintln!("[whimpr] undo-last-cleanup: no transcript yet"),
+            None => {
+                tracing::info!(target: "whimpr", "[whimpr] undo-last-cleanup: no transcript yet")
+            }
         }
     }
 
@@ -631,22 +652,25 @@ mod imp {
     }
 
     /// Add a manual dictionary entry and persist.
-    pub fn dictionary_add(correct: String, mishears: Vec<String>) {
-        if let Some(m) = DICTIONARY.get() {
-            let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
-            store.add(correct, mishears, whimpr_core::DictSource::Manual);
-            let _ = store.save(&dict_path());
-        }
+    pub fn dictionary_add(correct: String, mishears: Vec<String>) -> Result<(), String> {
+        let Some(m) = DICTIONARY.get() else {
+            return Err("dictionary not initialized".into());
+        };
+        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+        store.add(correct, mishears, whimpr_core::DictSource::Manual);
+        store.save(&dict_path()).map_err(|e| e.to_string())
     }
 
     /// Remove a dictionary entry by spelling and persist.
-    pub fn dictionary_remove(correct: &str) {
-        if let Some(m) = DICTIONARY.get() {
-            let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
-            if store.remove(correct) {
-                let _ = store.save(&dict_path());
-            }
+    pub fn dictionary_remove(correct: &str) -> Result<(), String> {
+        let Some(m) = DICTIONARY.get() else {
+            return Err("dictionary not initialized".into());
+        };
+        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+        if store.remove(correct) {
+            store.save(&dict_path()).map_err(|e| e.to_string())?;
         }
+        Ok(())
     }
 
     /// Add an AUTO-learned entry (from the post-paste correction observer) and persist.
@@ -668,22 +692,25 @@ mod imp {
     }
 
     /// Add (or, if the trigger already exists, replace) a snippet and persist.
-    pub fn snippet_add(trigger: String, expansion: String) {
-        if let Some(m) = SNIPPETS.get() {
-            let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
-            store.add(trigger, expansion);
-            let _ = store.save(&snippets_path());
-        }
+    pub fn snippet_add(trigger: String, expansion: String) -> Result<(), String> {
+        let Some(m) = SNIPPETS.get() else {
+            return Err("snippets not initialized".into());
+        };
+        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+        store.add(trigger, expansion);
+        store.save(&snippets_path()).map_err(|e| e.to_string())
     }
 
     /// Remove a snippet by its trigger and persist.
-    pub fn snippet_remove(trigger: &str) {
-        if let Some(m) = SNIPPETS.get() {
-            let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
-            if store.remove(trigger) {
-                let _ = store.save(&snippets_path());
-            }
+    pub fn snippet_remove(trigger: &str) -> Result<(), String> {
+        let Some(m) = SNIPPETS.get() else {
+            return Err("snippets not initialized".into());
+        };
+        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+        if store.remove(trigger) {
+            store.save(&snippets_path()).map_err(|e| e.to_string())?;
         }
+        Ok(())
     }
 
     /// Aggregated stats for the Hub. `tz_offset_minutes` is the UI's
@@ -781,7 +808,7 @@ mod imp {
         if ASR_LOADING.swap(true, Ordering::SeqCst) {
             return;
         }
-        eprintln!(
+        tracing::info!(target: "whimpr",
             "[whimpr] ASR model change: {}  ->  {target_name} (loading in the background)",
             loaded.as_deref().unwrap_or("<none>")
         );
@@ -789,10 +816,10 @@ mod imp {
             match whimpr_asr::WhisperEngine::load(&target) {
                 Ok(engine) => {
                     set_asr(Arc::new(engine), target_name.clone());
-                    eprintln!("[whimpr] ASR model swapped in: {target_name}");
+                    tracing::info!(target: "whimpr", "[whimpr] ASR model swapped in: {target_name}");
                 }
                 Err(e) => {
-                    eprintln!("[whimpr] ASR hot-reload failed ({e})  -  keeping the current model")
+                    tracing::info!(target: "whimpr", "[whimpr] ASR hot-reload failed ({e})  -  keeping the current model")
                 }
             }
             ASR_LOADING.store(false, Ordering::SeqCst);
@@ -822,7 +849,7 @@ mod imp {
         });
         let anthropic = read_anthropic_key()
             .map(|k| whimpr_cleanup::AnthropicProvider::new(k, settings.anthropic_model.clone()));
-        eprintln!(
+        tracing::info!(target: "whimpr",
             "[whimpr] cleanup providers: openai={}, anthropic={}",
             openai.is_some(),
             anthropic.is_some()
@@ -884,7 +911,7 @@ mod imp {
         };
         let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_some() {
-            eprintln!(
+            tracing::info!(target: "whimpr",
                 "[whimpr] local LLM worker idle > {}min  -  unloading to free RAM",
                 LOCAL_IDLE_TIMEOUT.as_secs() / 60
             );
@@ -943,7 +970,7 @@ mod imp {
             .get()
             .and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone());
         if let Some(app) = app_bundle_id.as_deref() {
-            eprintln!("[whimpr] cleanup target app: {app}");
+            tracing::info!(target: "whimpr", "[whimpr] cleanup target app: {app}");
         }
         // Code Mode: the code-dictation prompt variant, when the paste target is
         // an IDE/terminal and the user hasn't opted out.
@@ -953,7 +980,7 @@ mod imp {
                 .map(whimpr_core::cleanup::prompts::is_code_app)
                 .unwrap_or(false);
         if code_mode {
-            eprintln!("[whimpr] code mode active for this cleanup");
+            tracing::info!(target: "whimpr", "[whimpr] code mode active for this cleanup");
         }
         // Context Capsule (opt-in): the AX selection captured at record start
         // becomes reference-only window context for the model.
@@ -997,8 +1024,17 @@ mod imp {
                 String::new()
             }
         };
+        let cleanup_mode = match settings.cleanup_mode {
+            CleanupMode::OpenAi | CleanupMode::Anthropic
+                if !crate::licensing::cloud_cleanup_allowed() =>
+            {
+                tracing::info!(target: "whimpr", "[whimpr] cloud cleanup locked (license/trial required)  -  using local");
+                CleanupMode::Local
+            }
+            other => other,
+        };
         let (result, route, sent_to_cloud): (Option<anyhow::Result<String>>, String, bool) =
-            match settings.cleanup_mode {
+            match cleanup_mode {
                 CleanupMode::OpenAi => {
                     // Clone the provider out of the lock (providers are cheap
                     // to clone) so rebuild_providers  -  settings / API-key
@@ -1062,7 +1098,7 @@ mod imp {
                     provenance.gate = "passed".to_string();
                     cleaned
                 } else {
-                    eprintln!("[whimpr] cleanup gate rejected the edit  -  pasting raw");
+                    tracing::info!(target: "whimpr", "[whimpr] cleanup gate rejected the edit  -  pasting raw");
                     provenance.gate = "rejected".to_string();
                     raw_out.clone()
                 }
@@ -1071,14 +1107,23 @@ mod imp {
                 // Provider errored: the final text is raw ("raw"/"skipped" stand),
                 // but sent_to_cloud stays honest  -  the transcript may have left
                 // the machine even though no edit came back.
-                eprintln!("[whimpr] cleanup failed ({e})  -  pasting raw");
+                tracing::info!(target: "whimpr", "[whimpr] cleanup failed ({e})  -  pasting raw");
+                if matches!(
+                    settings.cleanup_mode,
+                    CleanupMode::OpenAi | CleanupMode::Anthropic
+                ) {
+                    if let Some(app) = APP.get() {
+                        let _ =
+                            app.emit_to(HUB_LABEL, "whimpr://cloud/unavailable", format!("{e}"));
+                    }
+                }
                 raw_out.clone()
             }
             None => {
                 if matches!(settings.cleanup_mode, CleanupMode::Local) {
-                    eprintln!("[whimpr] local cleanup model not wired yet  -  pasting raw");
+                    tracing::info!(target: "whimpr", "[whimpr] local cleanup model not wired yet  -  pasting raw");
                 } else {
-                    eprintln!("[whimpr] cleanup provider has no API key  -  pasting raw");
+                    tracing::info!(target: "whimpr", "[whimpr] cleanup provider has no API key  -  pasting raw");
                 }
                 raw_out.clone()
             }
@@ -1120,7 +1165,7 @@ mod imp {
     }
 
     fn emit_bar(app: &AppHandle, state: &'static str) {
-        eprintln!("[whimpr] pill -> {state}");
+        tracing::info!(target: "whimpr", "[whimpr] pill -> {state}");
         let _ = app.emit_to(
             OVERLAY_LABEL,
             "whimpr://flowbar/state",
@@ -1137,7 +1182,7 @@ mod imp {
 
     /// Emit the insertion receipt to both the overlay pill and the Hub.
     fn emit_receipt(app: &AppHandle, payload: ReceiptPayload) {
-        eprintln!(
+        tracing::info!(target: "whimpr",
             "[whimpr] receipt: ok={} action={} words={}",
             payload.ok, payload.action, payload.words
         );
@@ -1209,7 +1254,7 @@ mod imp {
         // so the user knows the workflow was bypassed.
         let mut workflow_note: Option<String> = None;
         if let Some((entry, payload)) = matched {
-            eprintln!("[whimpr] WORKFLOW \"{}\" matched", entry.name);
+            tracing::info!(target: "whimpr", "[whimpr] WORKFLOW \"{}\" matched", entry.name);
             // A trigger-only utterance runs the instruction over the whole
             // utterance rather than an empty payload.
             let input = if payload.is_empty() {
@@ -1267,7 +1312,7 @@ mod imp {
                     return;
                 }
                 Err(e) => {
-                    eprintln!(
+                    tracing::info!(target: "whimpr",
                         "[whimpr] workflow \"{}\" failed ({e})  -  falling back to a normal \
                          dictation so the utterance isn't lost",
                         entry.name
@@ -1292,7 +1337,7 @@ mod imp {
         });
         let outcome = match snippet_expansion {
             Some(expansion) => {
-                eprintln!("[whimpr] SNIPPET matched  -  pasting expansion directly");
+                tracing::info!(target: "whimpr", "[whimpr] SNIPPET matched  -  pasting expansion directly");
                 let expansion = if settings.safe_mode {
                     whimpr_core::redact_inappropriate_words(&expansion)
                 } else {
@@ -1313,7 +1358,7 @@ mod imp {
                 // Clean the transcript (cloud LLM if configured).
                 let outcome = clean_transcript(&raw);
                 if outcome.final_text != raw {
-                    eprintln!("[whimpr] CLEANED:   \"{}\"", outcome.final_text);
+                    tracing::info!(target: "whimpr", "[whimpr] CLEANED:   \"{}\"", outcome.final_text);
                 }
                 outcome
             }
@@ -1375,7 +1420,7 @@ mod imp {
         // Paste into the target app; the receipt reports the outcome either way.
         let paste_result = crate::paste::paste_text(&text);
         if let Err(e) = &paste_result {
-            eprintln!("[whimpr] paste failed: {e}");
+            tracing::info!(target: "whimpr", "[whimpr] paste failed: {e}");
         }
         // Stash (raw, final) for the "undo last cleanup edit" hotkey
         // (Cmd+Shift+Z), right after the paste.
@@ -1686,6 +1731,8 @@ mod imp {
             // Runs off the tap thread so the mic-permission prompt can't stall keys.
             Action::StartCapture { .. } => {
                 SESSION_LOCKED.store(false, Ordering::SeqCst);
+                crate::asr_idle::touch_dictation();
+                crate::feedback::play_start();
                 // Lazy model load: kick off the ASR engine (and, in Local
                 // cleanup mode, the local LLM worker) the moment the user
                 // presses Fn. By the time a short utterance finishes the
@@ -1725,7 +1772,7 @@ mod imp {
                                 // nobody else will ever stop this handle. Stop
                                 // it here and skip the preview loop.
                                 drop(guard);
-                                eprintln!(
+                                tracing::info!(target: "whimpr",
                                     "[whimpr] capture outlived its session  -  stopping the mic"
                                 );
                                 let _ = handle.stop();
@@ -1736,7 +1783,9 @@ mod imp {
                             // Live provisional text while recording (opt-out).
                             spawn_partial_loop(app_thread);
                         }
-                        Err(e) => eprintln!("[whimpr] mic capture failed to start: {e}"),
+                        Err(e) => {
+                            tracing::info!(target: "whimpr", "[whimpr] mic capture failed to start: {e}")
+                        }
                     }
                 });
             }
@@ -1754,7 +1803,7 @@ mod imp {
                     let finish =
                         || handle_input(Input::Pipeline(PipelineEvent::Committed { session }));
                     let Some(res) = handle.and_then(|h| h.stop()) else {
-                        eprintln!("[whimpr] no audio captured");
+                        tracing::info!(target: "whimpr", "[whimpr] no audio captured");
                         emit_receipt(
                             &app2,
                             ReceiptPayload {
@@ -1773,7 +1822,7 @@ mod imp {
                         return;
                     };
                     let peak = res.samples.iter().fold(0f32, |m, &s| m.max(s.abs()));
-                    eprintln!(
+                    tracing::info!(target: "whimpr",
                         "[whimpr] captured {} samples @ {} Hz (~{:.2}s), peak {:.4}",
                         res.samples.len(),
                         res.sample_rate,
@@ -1781,14 +1830,14 @@ mod imp {
                         peak
                     );
                     if peak < 0.005 {
-                        eprintln!(
+                        tracing::info!(target: "whimpr",
                             "[whimpr] ⚠ audio is silent  -  the mic isn't being captured. Grant \
                              Microphone access to your terminal (System Settings → Privacy & \
                              Security → Microphone), then fully quit + reopen it and rerun."
                         );
                     }
                     let Some(asr) = current_asr() else {
-                        eprintln!("[whimpr] ASR not ready (model still loading or missing)");
+                        tracing::info!(target: "whimpr", "[whimpr] ASR not ready (model still loading or missing)");
                         emit_receipt(
                             &app2,
                             ReceiptPayload {
@@ -1812,7 +1861,7 @@ mod imp {
                     let lang = effective_language(settings.language.as_deref());
                     match asr.transcribe_opts(&pcm, lang.as_deref(), long_form) {
                         Ok(t) => {
-                            eprintln!("[whimpr] TRANSCRIPT: \"{}\"", t.text);
+                            tracing::info!(target: "whimpr", "[whimpr] TRANSCRIPT: \"{}\"", t.text);
                             finalize_transcript(
                                 &app2,
                                 t.text,
@@ -1823,7 +1872,7 @@ mod imp {
                             );
                         }
                         Err(e) => {
-                            eprintln!("[whimpr] ASR error: {e}");
+                            tracing::info!(target: "whimpr", "[whimpr] ASR error: {e}");
                             emit_receipt(
                                 &app2,
                                 ReceiptPayload {
@@ -1936,7 +1985,7 @@ mod imp {
                 let was_down = FN_IS_DOWN.swap(down, Ordering::SeqCst);
                 let at_ms = now_ms();
                 if down && !was_down {
-                    eprintln!("[whimpr] Fn DOWN");
+                    tracing::info!(target: "whimpr", "[whimpr] Fn DOWN");
                     // Snapshot the paste target now, while the user's app is focused.
                     let target = crate::appctx::frontmost_bundle_id();
                     *TARGET_APP
@@ -1959,7 +2008,7 @@ mod imp {
                         at_ms,
                     }));
                 } else if !down && was_down {
-                    eprintln!("[whimpr] Fn UP");
+                    tracing::info!(target: "whimpr", "[whimpr] Fn UP");
                     handle_input(Input::Trigger(TriggerToken::Up {
                         binding: BindingId::PushToTalk,
                         at_ms,
@@ -2043,21 +2092,44 @@ mod imp {
     /// Copy every user data store into a timestamped backup folder. Note
     /// voice_memory.enc is only decryptable on the same machine  -  its AES
     /// key lives in the user's keychain, not in the backup.
+    fn backup_file_map() -> [(&'static str, PathBuf); 7] {
+        [
+            ("settings.json", settings_path()),
+            ("dictionary.json", dict_path()),
+            ("snippets.json", snippets_path()),
+            ("stats.json", stats_path()),
+            ("workflows.json", workflows_path()),
+            ("notes.json", notes_path()),
+            ("voice_memory.enc", voice_memory_path()),
+        ]
+    }
+
     pub fn backup_data() -> Result<String, String> {
-        whimpr_core::backup::backup_files(
-            &[
-                ("settings.json", settings_path()),
-                ("dictionary.json", dict_path()),
-                ("snippets.json", snippets_path()),
-                ("stats.json", stats_path()),
-                ("workflows.json", workflows_path()),
-                ("notes.json", notes_path()),
-                ("voice_memory.enc", voice_memory_path()),
-            ],
-            &support_dir().join("backups"),
-        )
-        .map(|p| p.display().to_string())
-        .map_err(|e| e.to_string())
+        whimpr_core::backup::backup_files(&backup_file_map(), &support_dir().join("backups"))
+            .map(|p| p.display().to_string())
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn list_backups() -> Result<Vec<String>, String> {
+        whimpr_core::backup::list_backups(&support_dir().join("backups"))
+            .map(|v| v.into_iter().map(|p| p.display().to_string()).collect())
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn restore_backup(backup_dir: String) -> Result<usize, String> {
+        let path = PathBuf::from(backup_dir);
+        let root = support_dir().join("backups");
+        let canon_root = root.canonicalize().map_err(|e| e.to_string())?;
+        let canon = path.canonicalize().map_err(|e| e.to_string())?;
+        if !canon.starts_with(&canon_root) {
+            return Err("backup path is outside the WhimprFlow backups folder".into());
+        }
+        whimpr_core::backup::restore_files(&backup_file_map(), &canon).map_err(|e| e.to_string())
+    }
+
+    pub fn reload_asr() {
+        let language = current_settings().language;
+        maybe_reload_asr(language.as_deref());
     }
 
     /// Pipeline health for the Hub's health chips.
@@ -2122,29 +2194,32 @@ mod imp {
         instruction: String,
         destination: WorkflowDestination,
         require_approval: bool,
-    ) {
-        if let Some(m) = WORKFLOWS.get() {
-            let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
-            store.add(
-                name,
-                trigger,
-                instruction,
-                destination,
-                require_approval,
-                unix_now(),
-            );
-            let _ = store.save(&workflows_path());
-        }
+    ) -> Result<(), String> {
+        let Some(m) = WORKFLOWS.get() else {
+            return Err("workflows not initialized".into());
+        };
+        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+        store.add(
+            name,
+            trigger,
+            instruction,
+            destination,
+            require_approval,
+            unix_now(),
+        );
+        store.save(&workflows_path()).map_err(|e| e.to_string())
     }
 
     /// Remove a workflow by its name and persist.
-    pub fn workflow_remove(name: &str) {
-        if let Some(m) = WORKFLOWS.get() {
-            let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
-            if store.remove(name) {
-                let _ = store.save(&workflows_path());
-            }
+    pub fn workflow_remove(name: &str) -> Result<(), String> {
+        let Some(m) = WORKFLOWS.get() else {
+            return Err("workflows not initialized".into());
+        };
+        let mut store = m.lock().unwrap_or_else(|e| e.into_inner());
+        if store.remove(name) {
+            store.save(&workflows_path()).map_err(|e| e.to_string())?;
         }
+        Ok(())
     }
 
     /// The workflow result currently held for approval, if any. Lets the
@@ -2250,7 +2325,7 @@ mod imp {
         };
         let vm = m.lock().unwrap_or_else(|e| e.into_inner());
         if let Err(e) = vm.save_encrypted(&voice_memory_path(), key) {
-            eprintln!("[whimpr] voice memory save failed: {e}");
+            tracing::info!(target: "whimpr", "[whimpr] voice memory save failed: {e}");
         }
     }
 
@@ -2345,7 +2420,7 @@ mod imp {
         // English-only vs. multilingual model file based on the language.
         let settings = whimpr_core::Settings::load(&settings_path());
         let dict = whimpr_core::DictionaryStore::load(&dict_path());
-        eprintln!(
+        tracing::info!(target: "whimpr",
             "[whimpr] cleanup mode: {:?}, level: {:?}, language: {:?}",
             settings.cleanup_mode, settings.cleanup_level, settings.language
         );
@@ -2383,7 +2458,7 @@ mod imp {
                 let _ = VM_KEY.set(key);
             }
             None => {
-                eprintln!(
+                tracing::info!(target: "whimpr",
                     "[whimpr] voice memory key unavailable (keychain?)  -  memory is \
                      in-memory only this run"
                 );
@@ -2409,14 +2484,15 @@ mod imp {
             std::thread::sleep(Duration::from_secs(60));
             reap_idle_local_worker();
         });
+        crate::asr_idle::spawn_watcher(clear_asr_idle);
 
         // Accessibility is the ONE permission that makes the Fn CGEventTap global AND
         // lets us post the Cmd+V paste into other apps. Without it, a keyboard tap is
         // silently limited to frontmost-only  -  the exact bug. Prompt for it up front.
         if crate::paste::is_trusted() {
-            eprintln!("[whimpr] Accessibility granted  -  Fn works in every app, paste enabled");
+            tracing::info!(target: "whimpr", "[whimpr] Accessibility granted  -  Fn works in every app, paste enabled");
         } else {
-            eprintln!(
+            tracing::info!(target: "whimpr",
                 "[whimpr] ⚠ Accessibility NOT granted  -  Fn only works while WhimprFlow is \
                  frontmost and paste is disabled. Prompting; grant WhimprFlow under System \
                  Settings → Privacy & Security → Accessibility (no relaunch needed)."
@@ -2424,7 +2500,7 @@ mod imp {
             crate::paste::prompt_accessibility();
         }
         // Input Monitoring is NOT the gate for a CGEventTap  -  kept only as diagnostics.
-        eprintln!(
+        tracing::info!(target: "whimpr",
             "[whimpr] (info) Input Monitoring: {}",
             crate::paste::input_monitoring_granted()
         );
@@ -2445,7 +2521,7 @@ mod imp {
             while !crate::paste::is_trusted() {
                 std::thread::sleep(Duration::from_millis(500));
             }
-            eprintln!("[whimpr] Accessibility present  -  creating global Fn tap");
+            tracing::info!(target: "whimpr", "[whimpr] Accessibility present  -  creating global Fn tap");
             let port = unsafe {
                 CGEventTapCreate(
                     K_CG_SESSION_EVENT_TAP,
@@ -2457,7 +2533,7 @@ mod imp {
                 )
             };
             if port.is_null() {
-                eprintln!(
+                tracing::info!(target: "whimpr",
                     "[whimpr] Fn tap null despite Accessibility  -  likely a stale TCC entry from \
                      an earlier build. Run: tccutil reset Accessibility com.whimpr.whimprflow, \
                      then re-grant and relaunch."
@@ -2480,9 +2556,10 @@ pub use imp::{
     approve_pending, backup_data, cancel_dictation, capture_screen, clear_history_text,
     clear_voice_memory, confirm_dictation, current_settings, dictionary_add, dictionary_entries,
     dictionary_learn, dictionary_remove, export_voice_memory, get_health, get_last_capsule,
-    get_voice_memory, history, install, rebuild_providers, reject_pending, snippet_add,
-    snippet_entries, snippet_remove, stats_summary, test_command_edit, update_settings,
-    voice_memory_record, workflow_add, workflow_entries, workflow_remove,
+    get_voice_memory, history, install, list_backups, rebuild_providers, reject_pending,
+    reload_asr, restore_backup, snippet_add, snippet_entries, snippet_remove, stats_summary,
+    test_command_edit, update_settings, voice_memory_record, workflow_add, workflow_entries,
+    workflow_remove,
 };
 // Not yet consumed: their lib.rs command wrappers land with the Workflows /
 // Privacy pane wiring. Kept in a separate `use` so the allow is scoped to them.
@@ -2494,13 +2571,15 @@ pub use imp::{get_pending, ledger};
 // including the roadmap-15 additions (workflows, receipts, voice memory,
 // health); Context Capsule and streaming preview remain macOS-only there.
 #[cfg(target_os = "windows")]
+#[allow(unused_imports)] // dictionary_learn kept for IPC surface parity with macOS
 pub use crate::win::{
     approve_pending, backup_data, cancel_dictation, capture_screen, clear_history_text,
     clear_voice_memory, confirm_dictation, current_settings, dictionary_add, dictionary_entries,
     dictionary_learn, dictionary_remove, export_voice_memory, get_health, get_last_capsule,
-    get_pending, get_voice_memory, history, install, ledger, rebuild_providers, reject_pending,
-    snippet_add, snippet_entries, snippet_remove, stats_summary, update_settings,
-    voice_memory_record, workflow_add, workflow_entries, workflow_remove,
+    get_pending, get_voice_memory, history, install, ledger, list_backups, rebuild_providers,
+    reject_pending, reload_asr, restore_backup, snippet_add, snippet_entries, snippet_remove,
+    stats_summary, update_settings, voice_memory_record, workflow_add, workflow_entries,
+    workflow_remove,
 };
 
 // Linux uses the real (but unverified) platform layer in `crate::linux`  -  X11 only
@@ -2511,9 +2590,10 @@ pub use crate::linux::{
     approve_pending, backup_data, cancel_dictation, capture_screen, clear_history_text,
     clear_voice_memory, confirm_dictation, current_settings, dictionary_add, dictionary_entries,
     dictionary_learn, dictionary_remove, export_voice_memory, get_health, get_last_capsule,
-    get_pending, get_voice_memory, history, install, ledger, rebuild_providers, reject_pending,
-    snippet_add, snippet_entries, snippet_remove, stats_summary, update_settings,
-    voice_memory_record, workflow_add, workflow_entries, workflow_remove,
+    get_pending, get_voice_memory, history, install, ledger, list_backups, rebuild_providers,
+    reject_pending, reload_asr, restore_backup, snippet_add, snippet_entries, snippet_remove,
+    stats_summary, update_settings, voice_memory_record, workflow_add, workflow_entries,
+    workflow_remove,
 };
 
 // Other platforms (BSD, etc.): inert stubs so the crate still builds.
@@ -2539,17 +2619,32 @@ mod other {
     pub fn dictionary_entries() -> Vec<super::DictEntryDto> {
         Vec::new()
     }
-    pub fn dictionary_add(_correct: String, _mishears: Vec<String>) {}
-    pub fn dictionary_remove(_correct: &str) {}
+    pub fn dictionary_add(_correct: String, _mishears: Vec<String>) -> Result<(), String> {
+        Ok(())
+    }
+    pub fn dictionary_remove(_correct: &str) -> Result<(), String> {
+        Ok(())
+    }
     pub fn dictionary_learn(_correct: String, _mishears: Vec<String>) {}
     pub fn snippet_entries() -> Vec<whimpr_core::SnippetEntry> {
         Vec::new()
     }
-    pub fn snippet_add(_trigger: String, _expansion: String) {}
-    pub fn snippet_remove(_trigger: &str) {}
+    pub fn snippet_add(_trigger: String, _expansion: String) -> Result<(), String> {
+        Ok(())
+    }
+    pub fn snippet_remove(_trigger: &str) -> Result<(), String> {
+        Ok(())
+    }
     pub fn backup_data() -> Result<String, String> {
         Err("backups are not implemented on this platform".to_string())
     }
+    pub fn list_backups() -> Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
+    pub fn restore_backup(_backup_dir: String) -> Result<usize, String> {
+        Err("restore is not implemented on this platform".to_string())
+    }
+    pub fn reload_asr() {}
     pub fn get_health() -> super::Health {
         super::Health {
             asr_ready: false,
@@ -2574,9 +2669,12 @@ mod other {
         _instruction: String,
         _destination: whimpr_core::WorkflowDestination,
         _require_approval: bool,
-    ) {
+    ) -> Result<(), String> {
+        Ok(())
     }
-    pub fn workflow_remove(_name: &str) {}
+    pub fn workflow_remove(_name: &str) -> Result<(), String> {
+        Ok(())
+    }
     pub fn get_pending() -> Option<super::PendingPayload> {
         None
     }
@@ -2599,7 +2697,8 @@ pub use other::{
     approve_pending, backup_data, cancel_dictation, capture_screen, clear_history_text,
     clear_voice_memory, confirm_dictation, current_settings, dictionary_add, dictionary_entries,
     dictionary_learn, dictionary_remove, export_voice_memory, get_health, get_last_capsule,
-    get_pending, get_voice_memory, history, install, ledger, rebuild_providers, reject_pending,
-    snippet_add, snippet_entries, snippet_remove, stats_summary, update_settings,
-    voice_memory_record, workflow_add, workflow_entries, workflow_remove,
+    get_pending, get_voice_memory, history, install, ledger, list_backups, rebuild_providers,
+    reject_pending, reload_asr, restore_backup, snippet_add, snippet_entries, snippet_remove,
+    stats_summary, update_settings, voice_memory_record, workflow_add, workflow_entries,
+    workflow_remove,
 };

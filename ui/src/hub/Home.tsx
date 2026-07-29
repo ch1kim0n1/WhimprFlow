@@ -3,18 +3,23 @@ import { font, palette } from "../tokens/values";
 import { theme } from "./theme";
 import { Button, Dot, useStats } from "./ui";
 import { Icon } from "./icons";
+import { listen } from "@tauri-apps/api/event";
 import {
   addDictionaryEntry,
+  downloadAsrModel,
   getHealth,
   getHistory,
   onReceipt,
   type Health,
   type HistoryItem,
+  type ModelProgress,
   type Provenance,
   type ReceiptEvent,
 } from "./api";
 import { dayKey, dayLabel, fmtDuration, fmtNum, fmtTimeOfDay } from "./format";
 import { gsap, prefersReduced, scrollerEl, EASE, EASE_EXPO } from "./anim";
+import { detectPlatformSync } from "./platform";
+import { EmptyState } from "./EmptyState";
 
 // Only the clip container for the headline reveal stays in CSS; GSAP drives motion.
 const HOME_CSS = `
@@ -202,15 +207,48 @@ function HealthChip({ ok, label, detail }: { ok: boolean; label: string; detail?
   );
 }
 
-function HealthChips({ health }: { health: Health }) {
-  // Model paths come back absolute; the filename is the useful part.
-  const model = health.asr_model ? health.asr_model.split("/").pop() : null;
+function HealthChips({
+  health,
+  onDownloadModel,
+  downloading,
+  progressPct,
+}: {
+  health: Health;
+  onDownloadModel: () => void;
+  downloading: boolean;
+  progressPct: number | null;
+}) {
+  // Model paths come back absolute; the filename is the useful part (also handle `\`).
+  const model = health.asr_model
+    ? health.asr_model.replace(/\\/g, "/").split("/").pop()
+    : null;
   return (
     <div className="home-health" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 22 }}>
       <HealthChip ok={health.asr_ready} label="ASR model" detail={model} />
       <HealthChip ok={health.local_llm_ready} label="Local cleanup" />
       <HealthChip ok={health.microphone} label="Microphone" />
       <HealthChip ok={health.accessibility} label="Accessibility" />
+      {!health.asr_ready && (
+        <button
+          onClick={onDownloadModel}
+          disabled={downloading}
+          style={{
+            cursor: downloading ? "default" : "pointer",
+            border: `1px solid ${theme.accentSoftBorder}`,
+            borderRadius: 999,
+            padding: "5px 12px",
+            fontSize: 12,
+            fontWeight: 600,
+            fontFamily: font.ui,
+            color: theme.accentDeep,
+            background: theme.accentSoft,
+          }}
+        >
+          {downloading
+            ? `Downloading model${progressPct != null ? ` ${progressPct}%` : "..."}`
+            : "Download speech model"}
+        </button>
+      )}
     </div>
   );
 }
@@ -591,7 +629,11 @@ export function Home() {
     accessibility: false,
   });
   const [receipt, setReceipt] = useState<ReceiptEvent | null>(null);
+  const [downloadingModel, setDownloadingModel] = useState(false);
+  const [modelPct, setModelPct] = useState<number | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const isWindows = detectPlatformSync() === "windows";
+  const pttLabel = isWindows ? "Right Ctrl" : "Fn";
   const wordsRef = useRef<HTMLDivElement | null>(null);
   const wpmRef = useRef<HTMLDivElement | null>(null);
   const streakRef = useRef<HTMLDivElement | null>(null);
@@ -630,6 +672,32 @@ export function Home() {
       off?.();
     };
   }, []);
+
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void listen<ModelProgress>("whimpr://model/progress", (e) => {
+      const { downloaded, total } = e.payload;
+      if (total > 0) setModelPct(Math.min(100, Math.round((downloaded / total) * 100)));
+    }).then((fn) => {
+      un = fn;
+    });
+    return () => un?.();
+  }, []);
+
+  const downloadModel = async () => {
+    setDownloadingModel(true);
+    setModelPct(0);
+    try {
+      await downloadAsrModel("base.en");
+      const h = await getHealth();
+      setHealth(h);
+    } catch {
+      /* toast surface lands later; health chip stays red */
+    } finally {
+      setDownloadingModel(false);
+      setModelPct(null);
+    }
+  };
 
   // Entrance timeline + scroll-reveal (advanced GSAP: staggered clip reveal,
   // hairline draw, and ScrollTrigger-driven row reveals on the <main> scroller).
@@ -709,13 +777,13 @@ export function Home() {
         </h1>
 
         <p className="home-sub" style={{ maxWidth: 528, margin: "22px 0 0", fontSize: 16, lineHeight: 1.62, color: theme.textMuted }}>
-          Hold <Kbd>Fn</Kbd> and speak. WhimprFlow removes filler and false starts, then places clean text at your cursor. No window to open, nothing to paste.
+          Hold <Kbd>{pttLabel}</Kbd> and speak. WhimprFlow removes filler and false starts, then places clean text at your cursor. No window to open, nothing to paste.
         </p>
 
         <div className="home-cta" style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 26, flexWrap: "wrap" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "10px 15px", borderRadius: 999, background: theme.solidBg, color: theme.solidText, fontSize: 13.5, fontWeight: 600, boxShadow: theme.shadow }}>
             <Icon name="mic" size={16} strokeWidth={1.9} style={{ color: theme.accentBright }} />
-            Hold Fn to dictate
+            Hold {pttLabel} to dictate
           </span>
           {today > 0 && (
             <span style={{ fontSize: 13.5, color: theme.textMuted }}>
@@ -724,7 +792,12 @@ export function Home() {
           )}
         </div>
 
-        <HealthChips health={health} />
+        <HealthChips
+          health={health}
+          onDownloadModel={() => void downloadModel()}
+          downloading={downloadingModel}
+          progressPct={modelPct}
+        />
       </div>
 
       {/* Editorial stat strip */}
@@ -753,8 +826,11 @@ export function Home() {
         </div>
         <div style={{ padding: "4px 20px 16px" }}>
           {history.length === 0 ? (
-            <div style={{ padding: "44px 8px", textAlign: "center", color: theme.textFaint, fontSize: 14, lineHeight: 1.6 }}>
-              No dictations yet.<br />Hold <Kbd>Fn</Kbd> and speak to add your first.
+            <div style={{ padding: "16px 0" }}>
+              <EmptyState
+                title="No dictations yet"
+                body={`Hold your dictation key (${pttLabel}) and start speaking.`}
+              />
             </div>
           ) : filtered.length === 0 ? (
             <div style={{ padding: "44px 8px", textAlign: "center", color: theme.textFaint, fontSize: 13.5 }}>No dictations match “{query}”.</div>

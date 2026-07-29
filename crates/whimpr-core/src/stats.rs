@@ -154,10 +154,7 @@ fn wpm(words: u64, secs: f64) -> u32 {
 
 impl StatsStore {
     pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        crate::json_store::load_or_recover(path)
     }
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {

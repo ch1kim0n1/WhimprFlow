@@ -7,13 +7,21 @@
 //! `whimpr://flowbar/state`, so the tray demo items prove the event pipeline.
 
 mod appctx;
+mod asr_idle;
 mod autolearn;
+mod data_wipe;
+mod feedback;
 mod hotkey;
+mod licensing;
 #[cfg(target_os = "linux")]
 mod linux;
 mod local_llm;
+mod logging;
+mod mic_test;
+mod models;
 mod notes;
 mod paste;
+mod watchdog;
 #[cfg(target_os = "windows")]
 mod win;
 
@@ -41,7 +49,7 @@ fn position_overlay(w: &WebviewWindow) {
                 .and_then(|m| m.into_iter().next())
         });
     let Some(monitor) = monitor else {
-        eprintln!("[whimpr] no monitor found  -  overlay stays at default position");
+        tracing::info!(target: "whimpr", "[whimpr] no monitor found  -  overlay stays at default position");
         return;
     };
     let scale = monitor.scale_factor();
@@ -52,7 +60,7 @@ fn position_overlay(w: &WebviewWindow) {
     let x = mpos.x + (msize.width as i32 - wsize.width as i32) / 2;
     let y = mpos.y + msize.height as i32 - wsize.height as i32 - inset;
     let _ = w.set_position(tauri::PhysicalPosition { x, y });
-    eprintln!(
+    tracing::info!(target: "whimpr",
         "[whimpr] overlay placed: monitor {}x{} @({},{}) scale {:.1} -> window {}x{} @({},{})",
         msize.width, msize.height, mpos.x, mpos.y, scale, wsize.width, wsize.height, x, y
     );
@@ -91,20 +99,38 @@ fn build_hub(app: &tauri::App) -> tauri::Result<WebviewWindow> {
         .build()
 }
 
-/// Render a keybinding chord with macOS glyphs (for the tray shortcuts menu).
+/// Render a keybinding chord for the tray shortcuts menu.
 fn fmt_chord(c: &whimpr_core::Chord) -> String {
     let mut s = String::new();
-    if c.ctrl {
-        s.push('⌃');
+    #[cfg(target_os = "macos")]
+    {
+        if c.ctrl {
+            s.push('⌃');
+        }
+        if c.alt {
+            s.push('⌥');
+        }
+        if c.shift {
+            s.push('⇧');
+        }
+        if c.meta {
+            s.push('⌘');
+        }
     }
-    if c.alt {
-        s.push('⌥');
-    }
-    if c.shift {
-        s.push('⇧');
-    }
-    if c.meta {
-        s.push('⌘');
+    #[cfg(not(target_os = "macos"))]
+    {
+        if c.ctrl {
+            s.push_str("Ctrl+");
+        }
+        if c.alt {
+            s.push_str("Alt+");
+        }
+        if c.shift {
+            s.push_str("Shift+");
+        }
+        if c.meta {
+            s.push_str("Win+");
+        }
     }
     match c.key {
         whimpr_core::Key::Escape => s.push_str("Esc"),
@@ -119,8 +145,38 @@ fn get_settings() -> whimpr_core::Settings {
 }
 
 #[tauri::command]
-fn set_settings(settings: whimpr_core::Settings) {
-    hotkey::update_settings(settings);
+fn set_settings(mut settings: whimpr_core::Settings) -> Result<whimpr_core::Settings, String> {
+    // Cloud cleanup requires an active license or trial.
+    settings.cleanup_mode =
+        licensing::gate_cleanup_mode(settings.cleanup_mode, licensing::cloud_cleanup_allowed());
+    hotkey::update_settings(settings.clone());
+    Ok(settings)
+}
+
+#[tauri::command]
+fn get_entitlement() -> whimpr_core::Entitlement {
+    licensing::current_entitlement()
+}
+
+#[tauri::command]
+fn activate_license(key: String) -> Result<whimpr_core::Entitlement, String> {
+    let ent = licensing::activate_license(&key)?;
+    hotkey::rebuild_providers();
+    Ok(ent)
+}
+
+#[tauri::command]
+fn clear_license() -> Result<whimpr_core::Entitlement, String> {
+    let ent = licensing::clear_license()?;
+    hotkey::rebuild_providers();
+    Ok(ent)
+}
+
+#[tauri::command]
+fn start_trial() -> Result<whimpr_core::Entitlement, String> {
+    let ent = licensing::start_trial()?;
+    hotkey::rebuild_providers();
+    Ok(ent)
 }
 
 /// Aggregated dictation stats for the Hub dashboard. `tz_offset_minutes` is the
@@ -164,19 +220,19 @@ fn get_dictionary() -> Vec<hotkey::DictEntryDto> {
 /// mishear is also recorded in Voice Memory, so manual corrections land in
 /// the same audit log as auto-learned ones.
 #[tauri::command]
-fn add_dictionary_entry(correct: String, mishears: Vec<String>) {
+fn add_dictionary_entry(correct: String, mishears: Vec<String>) -> Result<(), String> {
     for mishear in &mishears {
         if !mishear.trim().is_empty() {
             hotkey::voice_memory_record(mishear.clone(), correct.clone(), "manual");
         }
     }
-    hotkey::dictionary_add(correct, mishears);
+    hotkey::dictionary_add(correct, mishears)
 }
 
 /// Remove a dictionary entry by its spelling.
 #[tauri::command]
-fn remove_dictionary_entry(correct: String) {
-    hotkey::dictionary_remove(&correct);
+fn remove_dictionary_entry(correct: String) -> Result<(), String> {
+    hotkey::dictionary_remove(&correct)
 }
 
 /// Snippet entries for the Hub Snippets screen.
@@ -187,20 +243,72 @@ fn get_snippets() -> Vec<whimpr_core::SnippetEntry> {
 
 /// Add (or replace, if the trigger already exists) a voice-triggered text snippet.
 #[tauri::command]
-fn add_snippet(trigger: String, expansion: String) {
-    hotkey::snippet_add(trigger, expansion);
+fn add_snippet(trigger: String, expansion: String) -> Result<(), String> {
+    hotkey::snippet_add(trigger, expansion)
 }
 
 /// Remove a snippet by its trigger phrase.
 #[tauri::command]
-fn remove_snippet(trigger: String) {
-    hotkey::snippet_remove(&trigger);
+fn remove_snippet(trigger: String) -> Result<(), String> {
+    hotkey::snippet_remove(&trigger)
 }
 
 /// Workflow entries for the Hub Workflows screen.
 #[tauri::command]
 fn get_workflows() -> Vec<whimpr_core::WorkflowEntry> {
     hotkey::workflow_entries()
+}
+
+#[tauri::command]
+fn list_workflow_presets() -> Vec<whimpr_core::WorkflowPreset> {
+    whimpr_core::workflow_presets()
+}
+
+#[tauri::command]
+fn export_dictionary() -> Result<String, String> {
+    let entries = hotkey::dictionary_entries();
+    serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_dictionary(json: String, mode: String) -> Result<usize, String> {
+    #[derive(serde::Deserialize)]
+    struct EntryIn {
+        correct: String,
+        #[serde(default)]
+        mishears: Vec<String>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum Payload {
+        Wrapped { entries: Vec<EntryIn> },
+        Flat(Vec<EntryIn>),
+    }
+    let parsed: Payload = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let entries = match parsed {
+        Payload::Wrapped { entries } => entries,
+        Payload::Flat(entries) => entries,
+    };
+    if mode == "replace" {
+        for e in hotkey::dictionary_entries() {
+            let _ = hotkey::dictionary_remove(&e.correct);
+        }
+    }
+    let mut n = 0usize;
+    for e in entries {
+        let correct = e.correct.trim().to_string();
+        if correct.is_empty() {
+            continue;
+        }
+        hotkey::dictionary_add(correct, e.mishears)?;
+        n += 1;
+    }
+    Ok(n)
+}
+
+#[tauri::command]
+fn validate_keybindings(kb: whimpr_core::KeyBindings) -> Vec<String> {
+    whimpr_core::settings::validate_keybindings(&kb)
 }
 
 /// Add (or update, keyed by name) a voice workflow. An update bumps the version
@@ -212,14 +320,14 @@ fn add_workflow(
     instruction: String,
     destination: whimpr_core::WorkflowDestination,
     require_approval: bool,
-) {
-    hotkey::workflow_add(name, trigger, instruction, destination, require_approval);
+) -> Result<(), String> {
+    hotkey::workflow_add(name, trigger, instruction, destination, require_approval)
 }
 
 /// Remove a workflow by its name.
 #[tauri::command]
-fn remove_workflow(name: String) {
-    hotkey::workflow_remove(&name);
+fn remove_workflow(name: String) -> Result<(), String> {
+    hotkey::workflow_remove(&name)
 }
 
 /// Approve the workflow result currently held for approval (see the
@@ -334,24 +442,33 @@ fn open_url(url: &str) {
     let _ = std::process::Command::new("open").arg(url).spawn();
 }
 
-/// Request microphone access: trigger the native prompt (bundle has a usage string)
-/// by briefly opening the input device, and open the Microphone settings pane.
-#[tauri::command]
-fn request_microphone() {
-    #[cfg(target_os = "macos")]
-    {
-        std::thread::spawn(|| {
-            if let Ok(h) = whimpr_audio::start(|_: &[f32]| {}) {
-                std::thread::sleep(std::time::Duration::from_millis(400));
-                let _ = h.stop();
-            }
-        });
-        open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone");
-    }
+#[cfg(target_os = "windows")]
+fn open_url(url: &str) {
+    // `cmd /c start "" <uri>` launches ms-settings: / https: URIs via the shell.
+    let _ = std::process::Command::new("cmd")
+        .args(["/c", "start", "", url])
+        .spawn();
 }
 
-/// Request Accessibility  -  the permission that makes the Fn key work in every app and
-/// lets us type into other apps. Fire the native prompt, then open the pane.
+/// Request microphone access: trigger the native prompt by briefly opening the
+/// input device, and open the OS microphone privacy pane.
+#[tauri::command]
+fn request_microphone() {
+    std::thread::spawn(|| {
+        if let Ok(h) = whimpr_audio::start(|_: &[f32]| {}) {
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            let _ = h.stop();
+        }
+    });
+    #[cfg(target_os = "macos")]
+    open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone");
+    #[cfg(target_os = "windows")]
+    open_url("ms-settings:privacy-microphone");
+}
+
+/// Request Accessibility - on macOS this gates the Fn tap and paste into other
+/// apps. On Windows there is no equivalent preflight grant for SendInput; open
+/// the privacy landing page so users can review mic/speech permissions.
 #[tauri::command]
 fn request_accessibility() {
     #[cfg(target_os = "macos")]
@@ -359,10 +476,12 @@ fn request_accessibility() {
         let _ = paste::prompt_accessibility();
         open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
     }
+    #[cfg(target_os = "windows")]
+    open_url("ms-settings:privacy-speech");
 }
 
-/// Request Input Monitoring (needed for the Fn key to be seen in every app, not
-/// just while WhimprFlow is frontmost): register + prompt, then open the pane.
+/// Request Input Monitoring (macOS Fn tap visibility). On Windows the LL hook
+/// needs no separate grant - open keyboard settings as a helpful landing page.
 #[tauri::command]
 fn request_input_monitoring() {
     #[cfg(target_os = "macos")]
@@ -370,21 +489,25 @@ fn request_input_monitoring() {
         let _ = paste::request_input_monitoring();
         open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent");
     }
+    #[cfg(target_os = "windows")]
+    open_url("ms-settings:easeofaccess-keyboard");
 }
 
 /// Called by the overlay pill's Stop button to end a locked hands-free session  -
 /// the UI equivalent of the re-press-to-finalize hotkey transition. A no-op
 /// unless a session is actually locked.
 #[tauri::command]
-fn confirm_dictation() {
+fn confirm_dictation() -> Result<(), String> {
     hotkey::confirm_dictation();
+    Ok(())
 }
 
 /// Called by the overlay pill's Cancel button (mirrors the Escape key) to
 /// discard whatever dictation is currently in flight. A no-op when idle.
 #[tauri::command]
-fn cancel_dictation() {
+fn cancel_dictation() -> Result<(), String> {
     hotkey::cancel_dictation();
+    Ok(())
 }
 
 /// Manual Command Mode test hook: runs the instruction-following rewrite prompt
@@ -432,6 +555,44 @@ fn backup_data() -> Result<String, String> {
     hotkey::backup_data()
 }
 
+#[tauri::command]
+fn list_backups() -> Result<Vec<String>, String> {
+    hotkey::list_backups()
+}
+
+#[tauri::command]
+fn restore_backup(backup_dir: String) -> Result<usize, String> {
+    hotkey::restore_backup(backup_dir)
+}
+
+#[tauri::command]
+fn list_model_offers() -> Vec<models::ModelOffer> {
+    models::list_offers()
+}
+
+#[tauri::command]
+fn asr_model_installed() -> bool {
+    models::recommended_installed()
+}
+
+/// Download the recommended Whisper model with SHA-256 verification, then
+/// reload ASR. Emits `whimpr://model/progress` while streaming.
+#[tauri::command]
+fn download_asr_model(app: tauri::AppHandle, model_id: Option<String>) -> Result<String, String> {
+    models::download_recommended(app, model_id)
+}
+
+#[tauri::command]
+fn reload_asr() -> Result<(), String> {
+    hotkey::reload_asr();
+    Ok(())
+}
+
+#[tauri::command]
+fn dismiss_safe_mode() -> Result<(), String> {
+    crate::watchdog::clear_launch_sentinel()
+}
+
 /// Save (or clear, when empty) an API key in the OS keychain, then rebuild providers
 /// so it takes effect immediately.
 #[tauri::command]
@@ -453,8 +614,58 @@ fn set_api_key(provider: String, key: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn export_diagnostics() -> Result<String, String> {
+    logging::export_diagnostics()
+}
+
+#[tauri::command]
+fn list_crash_reports() -> Vec<String> {
+    logging::list_crash_reports()
+}
+
+#[tauri::command]
+fn get_last_cold_start_ms() -> Option<u64> {
+    logging::last_cold_start_ms()
+}
+
+#[tauri::command]
+fn hub_ready() {
+    logging::mark_hub_ready();
+    let _ = crate::watchdog::clear_launch_sentinel();
+}
+
+#[derive(serde::Serialize)]
+struct BuildInfo {
+    version: &'static str,
+    git_hash: &'static str,
+}
+
+#[tauri::command]
+fn get_build_info() -> BuildInfo {
+    BuildInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        git_hash: env!("WHIMPR_GIT_HASH"),
+    }
+}
+
+#[tauri::command]
+fn wipe_all_data(delete_models: bool) -> Result<(), String> {
+    crate::data_wipe::wipe_all(delete_models)
+}
+
+#[tauri::command]
+fn mic_self_test() -> Result<f32, String> {
+    crate::mic_test::peak_rms_2s()
+}
+
 pub fn run() {
+    logging::mark_process_start();
+    logging::init();
+    let _ = crate::watchdog::note_launch();
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             get_settings,
             set_settings,
@@ -469,8 +680,12 @@ pub fn run() {
             add_snippet,
             remove_snippet,
             get_workflows,
+            list_workflow_presets,
             add_workflow,
             remove_workflow,
+            export_dictionary,
+            import_dictionary,
+            validate_keybindings,
             approve_pending,
             reject_pending,
             get_health,
@@ -492,7 +707,25 @@ pub fn run() {
             cancel_dictation,
             test_command_edit,
             run_transform,
-            backup_data
+            backup_data,
+            list_backups,
+            restore_backup,
+            list_model_offers,
+            asr_model_installed,
+            download_asr_model,
+            reload_asr,
+            get_entitlement,
+            activate_license,
+            clear_license,
+            start_trial,
+            export_diagnostics,
+            get_last_cold_start_ms,
+            hub_ready,
+            get_build_info,
+            wipe_all_data,
+            mic_self_test,
+            dismiss_safe_mode,
+            list_crash_reports
         ])
         .setup(|app| {
             // Regular app: shows in the Dock with a normal, focusable main window.
@@ -505,6 +738,11 @@ pub fn run() {
             let _ = hub.show();
             let _ = hub.set_focus();
 
+            if crate::watchdog::in_safe_mode() {
+                use tauri::Emitter;
+                let _ = app.emit("whimpr://safe-mode", ());
+            }
+
             // Wire the Fn key to the pill via the real state machine.
             hotkey::install(app.handle().clone());
 
@@ -514,22 +752,27 @@ pub fn run() {
             let header =
                 MenuItem::with_id(app, "hdr", "WhimprFlow Shortcuts", false, None::<&str>)?;
             let sep0 = PredefinedMenuItem::separator(app)?;
-            let sc_ptt =
-                MenuItem::with_id(app, "sc_ptt", "Push-to-talk:  Hold Fn", true, None::<&str>)?;
-            let sc_hf = MenuItem::with_id(
-                app,
-                "sc_hf",
+            #[cfg(target_os = "macos")]
+            let (ptt_label, hf_label, cmd_label) = (
+                "Push-to-talk:  Hold Fn",
                 "Hands-free lock:  Double-tap Fn",
-                true,
-                None::<&str>,
-            )?;
-            let sc_cmd = MenuItem::with_id(
-                app,
-                "sc_cmd",
                 "Command Mode:  Hold Fn+Ctrl",
-                true,
-                None::<&str>,
-            )?;
+            );
+            #[cfg(target_os = "windows")]
+            let (ptt_label, hf_label, cmd_label) = (
+                "Push-to-talk:  Hold Right Ctrl",
+                "Hands-free lock:  Double-tap Right Ctrl",
+                "Command Mode:  Ctrl+Alt+Space (coming soon)",
+            );
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            let (ptt_label, hf_label, cmd_label) = (
+                "Push-to-talk:  Hold trigger key",
+                "Hands-free lock:  Double-tap trigger",
+                "Command Mode:  see Settings",
+            );
+            let sc_ptt = MenuItem::with_id(app, "sc_ptt", ptt_label, true, None::<&str>)?;
+            let sc_hf = MenuItem::with_id(app, "sc_hf", hf_label, true, None::<&str>)?;
+            let sc_cmd = MenuItem::with_id(app, "sc_cmd", cmd_label, true, None::<&str>)?;
             let sc_cancel = MenuItem::with_id(
                 app,
                 "sc_cancel",
@@ -584,9 +827,13 @@ pub fn run() {
                 });
             match tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png")) {
                 Ok(img) => {
+                    tray = tray.icon(img);
                     // Template image: macOS renders it monochrome and adapts it to
-                    // the menu bar (white on dark), matching native status items.
-                    tray = tray.icon(img).icon_as_template(true);
+                    // the menu bar (white on dark). Not meaningful on Windows/Linux.
+                    #[cfg(target_os = "macos")]
+                    {
+                        tray = tray.icon_as_template(true);
+                    }
                 }
                 Err(_) => {
                     if let Some(icon) = app.default_window_icon().cloned() {

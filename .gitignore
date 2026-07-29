@@ -25,3 +25,8 @@ src-tauri/gen/
 .env
 .env.*
 *.pem
+
+# Release / license private materials (never commit)
+/secrets/
+!.env.example
+

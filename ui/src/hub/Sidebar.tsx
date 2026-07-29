@@ -40,7 +40,7 @@ const BOTTOM: NavDef[] = [
   { key: "help", label: "Help", icon: "help" },
 ];
 
-const ACCOUNT: NavDef = { key: "account", label: "Account", icon: "user" };
+const ACCOUNT: NavDef = { key: "account", label: "License", icon: "user" };
 
 const NAV_CSS = `
   .nav-item { position: relative; }

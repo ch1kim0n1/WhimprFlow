@@ -1,0 +1,63 @@
+{
+  "app": {
+    "name": "WhimprFlow"
+  },
+  "nav": {
+    "home": "Home",
+    "insights": "Insights",
+    "dictionary": "Dictionary",
+    "snippets": "Snippets",
+    "workflows": "Workflows",
+    "settings": "Settings",
+    "license": "License",
+    "help": "Help",
+    "privacy": "Privacy"
+  },
+  "home": {
+    "recent": "Recent dictations",
+    "emptyTitle": "No dictations yet",
+    "emptyBody": "Hold your dictation key and start speaking."
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "languageEnglish": "English",
+    "performance": "Performance",
+    "audioFeedback": "Audio feedback",
+    "crashReports": "Crash reports"
+  },
+  "onboarding": {
+    "title": "Set up WhimprFlow",
+    "micTest": "Test your microphone",
+    "ready": "You're ready to dictate",
+    "startTrial": "Start 14-day trial",
+    "enter": "Enter WhimprFlow"
+  },
+  "license": {
+    "title": "License",
+    "activate": "Activate",
+    "startTrial": "Start 14-day trial"
+  },
+  "help": {
+    "title": "Help"
+  },
+  "dictionary": {
+    "title": "Dictionary",
+    "emptyTitle": "No words yet",
+    "emptyBody": "Add a word you keep mishearing and WhimprFlow will fix it automatically."
+  },
+  "snippets": {
+    "title": "Snippets",
+    "emptyTitle": "No snippets yet",
+    "emptyBody": "Snippets let you insert boilerplate text with a trigger."
+  },
+  "workflows": {
+    "title": "Workflows",
+    "emptyTitle": "No workflows yet",
+    "emptyBody": "Workflows auto-format your dictation for specific apps.",
+    "templates": "Templates"
+  },
+  "privacy": {
+    "title": "Privacy"
+  }
+}

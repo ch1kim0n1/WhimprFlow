@@ -216,6 +216,20 @@ impl KeyBindings {
             .find(|(name, bound)| *name != except && *bound == chord)
             .map(|(name, _)| name)
     }
+
+    /// Human-readable conflict descriptions for every pair of colliding bindings.
+    pub fn validate_keybindings(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let entries = self.entries();
+        for (i, (name, chord)) in entries.iter().enumerate() {
+            for (other, other_chord) in entries.iter().skip(i + 1) {
+                if chord == other_chord {
+                    out.push(format!("Conflict with {other} (same key as {name})"));
+                }
+            }
+        }
+        out
+    }
 }
 
 /// Persisted user configuration.
@@ -248,10 +262,10 @@ pub struct Settings {
     /// `#[serde(default)]` keeps older settings.json files loading cleanly.
     #[serde(default)]
     pub style: StyleProfile,
-    /// How many days of dictation text to keep in history. `None` (the default)
-    /// keeps text forever; `Some(0)` never stores text at all. Numeric stats are
-    /// always kept regardless.
-    #[serde(default)]
+    /// How many days of dictation text to keep in history. `None` keeps text
+    /// forever; `Some(0)` never stores text at all. Default is 30 days.
+    /// Numeric stats are always kept regardless.
+    #[serde(default = "default_retention_days")]
     pub retention_days: Option<u32>,
     /// Context Capsule (opt-in per-app context bundle). Defaults to fully off.
     #[serde(default)]
@@ -267,11 +281,30 @@ pub struct Settings {
     /// Show live provisional text in the FlowBar while recording. Default on.
     #[serde(default = "default_true")]
     pub streaming_preview: bool,
+    /// Clear the system clipboard after paste when the previous clipboard was empty.
+    #[serde(default = "default_true")]
+    pub clear_clipboard_after_paste: bool,
+    /// Soft RAM budget hint for the local LLM worker (0 = unlimited).
+    #[serde(default)]
+    pub max_ram_mb: u32,
+    /// Unload Whisper after this many idle minutes (0 = never).
+    #[serde(default)]
+    pub unload_asr_after_idle_minutes: u32,
+    /// Play a short confirmation sound after a successful paste.
+    #[serde(default)]
+    pub sound_on_complete: bool,
+    /// When true, panic hook writes a local crash report file (never uploaded).
+    #[serde(default)]
+    pub crash_reporting_opt_in: bool,
 }
 
 /// Serde default for the settings that ship ON (see `default = "default_true"`).
 fn default_true() -> bool {
     true
+}
+
+fn default_retention_days() -> Option<u32> {
+    Some(30)
 }
 
 impl Default for Settings {
@@ -287,21 +320,28 @@ impl Default for Settings {
             language: None,
             keybindings: KeyBindings::default(),
             style: StyleProfile::default(),
-            retention_days: None,
+            retention_days: Some(30),
             capsule: CapsuleSettings::default(),
             code_mode_auto: true,
             meeting_mode: false,
             streaming_preview: true,
+            clear_clipboard_after_paste: true,
+            max_ram_mb: 0,
+            unload_asr_after_idle_minutes: 0,
+            sound_on_complete: false,
+            crash_reporting_opt_in: false,
         }
     }
 }
 
+/// Free-function alias used by the Hub / IPC layer.
+pub fn validate_keybindings(kb: &KeyBindings) -> Vec<String> {
+    kb.validate_keybindings()
+}
+
 impl Settings {
     pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        crate::json_store::load_or_recover(path)
     }
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
@@ -495,7 +535,7 @@ mod tests {
             "sound_on_start": true
         }"#;
         let s: Settings = serde_json::from_str(json).unwrap();
-        assert_eq!(s.retention_days, None, "keep text forever by default");
+        assert_eq!(s.retention_days, Some(30), "default retention is 30 days");
         assert_eq!(s.capsule, CapsuleSettings::default());
         assert!(!s.capsule.enabled, "capsule is strictly opt-in");
         assert!(!s.capsule.include_selection);

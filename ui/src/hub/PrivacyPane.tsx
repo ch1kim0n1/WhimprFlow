@@ -513,6 +513,63 @@ export function PrivacyPane({
           <Ledger items={history} />
         </div>
       </Card>
+
+      <EraseAllCard />
     </div>
+  );
+}
+
+function EraseAllCard() {
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  return (
+    <Card style={{ marginTop: 16 }}>
+      <SectionTitle
+        icon="shield"
+        sub="Deletes local stores, backups, logs, and keychain entries. Whisper models are kept unless you opt in. Type ERASE to confirm."
+      >
+        Erase all my data
+      </SectionTitle>
+      <input
+        value={confirm}
+        onChange={(e) => setConfirm(e.target.value)}
+        placeholder="Type ERASE"
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          marginBottom: 12,
+          padding: "10px 12px",
+          borderRadius: 10,
+          border: `1px solid ${theme.border}`,
+          background: theme.cardBgSubtle,
+          color: theme.textStrong,
+          fontSize: 13,
+        }}
+      />
+      <Button
+        variant="dark"
+        size="sm"
+        disabled={busy || confirm !== "ERASE"}
+        onClick={() => {
+          setBusy(true);
+          setMsg(null);
+          void import("./api").then(async ({ wipeAllData, relaunchAfterUpdate }) => {
+            try {
+              await wipeAllData(false);
+              setMsg("Data erased. Relaunching…");
+              await relaunchAfterUpdate();
+            } catch (e) {
+              setMsg(String(e));
+              setBusy(false);
+            }
+          });
+        }}
+      >
+        Erase everything
+      </Button>
+      {msg && <div style={{ marginTop: 10, fontSize: 12.5, color: theme.textMuted }}>{msg}</div>}
+    </Card>
   );
 }

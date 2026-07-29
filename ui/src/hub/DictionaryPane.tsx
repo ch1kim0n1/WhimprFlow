@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { font } from "../tokens/values";
 import { theme } from "./theme";
 import { Button, Card } from "./ui";
 import { Icon } from "./icons";
 import {
   addDictionaryEntry,
+  exportDictionary,
   getDictionary,
+  importDictionary,
   removeDictionaryEntry,
   type DictEntry,
 } from "./api";
+import { EmptyState } from "./EmptyState";
 
 type Tab = "all" | "personal" | "shared";
 
@@ -180,6 +184,7 @@ function EntryRow({ entry, onRemove }: { entry: DictEntry; onRemove: () => void 
 }
 
 export function DictionaryPane() {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<DictEntry[]>([]);
   const [tab, setTab] = useState<Tab>("all");
   const [query, setQuery] = useState("");
@@ -212,16 +217,41 @@ export function DictionaryPane() {
               color: theme.textStrong,
             }}
           >
-            Dictionary
+            {t("dictionary.title")}
           </h1>
           <p style={{ color: theme.textMuted, fontSize: 14, margin: "8px 0 0" }}>
             Teach WhimprFlow the words, names, and jargon it should always get right.
           </p>
         </div>
-        <Button variant="accent" onClick={() => setAdding((a) => !a)}>
-          <Icon name="plus" size={15} style={{ color: "#fff" }} />
-          Add new
-        </Button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              void exportDictionary().then((json) => {
+                void navigator.clipboard.writeText(json);
+              });
+            }}
+          >
+            Export
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const raw = window.prompt("Paste dictionary JSON to import");
+              if (!raw) return;
+              const mode = window.confirm("OK = merge, Cancel = replace") ? "merge" : "replace";
+              void importDictionary(raw, mode).then(() => void load());
+            }}
+          >
+            Import
+          </Button>
+          <Button variant="accent" onClick={() => setAdding((a) => !a)}>
+            <Icon name="plus" size={15} style={{ color: "#fff" }} />
+            Add new
+          </Button>
+        </div>
       </div>
 
       <Tabs tab={tab} onChange={setTab} />
@@ -293,11 +323,21 @@ export function DictionaryPane() {
       ) : (
         <Card pad={filtered.length ? 8 : 22}>
           {filtered.length === 0 ? (
-            <div style={{ padding: "30px 8px", textAlign: "center", color: theme.textFaint, fontSize: 13.5 }}>
-              {entries.length === 0
-                ? "No words yet. Add one, or WhimprFlow will auto-learn the terms you correct."
-                : `No words match “${query}”.`}
-            </div>
+            entries.length === 0 ? (
+              <EmptyState
+                title={t("dictionary.emptyTitle")}
+                body={t("dictionary.emptyBody")}
+                action={
+                  <Button variant="accent" size="sm" onClick={() => setAdding(true)}>
+                    Add word
+                  </Button>
+                }
+              />
+            ) : (
+              <div style={{ padding: "30px 8px", textAlign: "center", color: theme.textFaint, fontSize: 13.5 }}>
+                No words match “{query}”.
+              </div>
+            )
           ) : (
             <div style={{ padding: "4px 14px" }}>
               {filtered.map((e) => (

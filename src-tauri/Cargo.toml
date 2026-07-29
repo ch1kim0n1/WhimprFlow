@@ -20,14 +20,26 @@ whimpr-asr = { path = "../crates/whimpr-asr" }
 whimpr-cleanup = { path = "../crates/whimpr-cleanup" }
 strsim = "0.11"
 tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
+# In-app auto-update checks. The signing pubkey lives in tauri.conf.json
+# (plugins.updater.pubkey); the matching private key is supplied to CI via
+# the TAURI_SIGNING_PRIVATE_KEY / _PASSWORD secrets so installers are signed.
+tauri-plugin-updater = "2"
+# relaunch after a successful update (used by the Hub "Check for updates" flow).
+tauri-plugin-process = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 anyhow = { workspace = true }
 arboard = "3"
 # OS randomness for the voice-memory encryption key (generated once, kept in the
 # keychain). Same crate/version whimpr-core uses for AES-GCM nonces.
 getrandom = "0.2"
+# One-click ASR model download (Hub / Onboarding) with SHA-256 verification.
+reqwest = { version = "0.12", features = ["blocking", "rustls-tls"], default-features = false }
+sha2 = "0.10"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # keyring 3 ships with NO platform keystore compiled in by default - without the
@@ -36,7 +48,7 @@ getrandom = "0.2"
 # its own keystore backend.
 keyring = { version = "3", features = ["windows-native"] }
 # Windows platform layer (low-level keyboard hook, SendInput paste, foreground-app
-# detection). UNVERIFIED: written on macOS, never compiled or run on Windows.
+# detection). Paste itself lives in `paste.rs` (shared surface with Hub status).
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
@@ -44,6 +56,7 @@ windows = { version = "0.58", features = [
     "Win32_System_Threading",
     "Win32_System_LibraryLoader",
     "Win32_System_ProcessStatus",
+    "Win32_System_SystemInformation",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -51,10 +64,7 @@ windows = { version = "0.58", features = [
 # against libdbus-1 (build hosts need the libdbus headers, e.g. libdbus-1-dev);
 # `crypto-rust` keeps the session crypto pure-Rust instead of pulling OpenSSL.
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
-# X11 hotkey grab + display-server plumbing for the Linux platform layer
-# (linux.rs `use x11rb::...`). UNVERIFIED: written on macOS, never compiled on
-# Linux. Was previously only present transitively via arboard, which does not
-# satisfy a direct `use`.
+# X11 hotkey grab + display-server plumbing for the Linux platform layer.
 x11rb = "0.13"
 
 [target.'cfg(target_os = "macos")'.dependencies]

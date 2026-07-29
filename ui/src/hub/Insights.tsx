@@ -4,6 +4,7 @@ import { theme } from "./theme";
 import { Card, PageTitle, useStats } from "./ui";
 import type { StatsSummary } from "./api";
 import { fmtCompact, fmtDuration, fmtNum, newsArticles } from "./format";
+import { EmptyState } from "./EmptyState";
 
 // ── Semicircular gauge ───────────────────────────────────────────────────────
 function Gauge({ value, max }: { value: number; max: number }) {
@@ -355,8 +356,17 @@ export function Insights() {
   return (
     <div style={{ maxWidth: 1000 }}>
       <PageTitle>Insights</PageTitle>
-      <Tabs tab={tab} onChange={setTab} />
-      {tab === "usage" ? <UsageTab stats={stats} /> : <VoiceTab />}
+      {stats.total_sessions === 0 ? (
+        <EmptyState
+          title="No dictations yet"
+          body="Hold your dictation key and start speaking."
+        />
+      ) : (
+        <>
+          <Tabs tab={tab} onChange={setTab} />
+          {tab === "usage" ? <UsageTab stats={stats} /> : <VoiceTab />}
+        </>
+      )}
     </div>
   );
 }

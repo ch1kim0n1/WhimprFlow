@@ -1,21 +1,25 @@
-MIT License
+WhimprFlow Proprietary Software License
 
-Copyright (c) 2026 WhimprFlow contributors
+Copyright (c) 2026 WhimprFlow
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+All rights reserved.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This repository and the WhimprFlow desktop application are proprietary software.
+Subject to the End User License Agreement in docs/legal/EULA.md and the Terms of
+Service in docs/legal/TERMS.md:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+1. You may not redistribute, sublicense, sell, or publish installers, binaries,
+   or source derived from this project except as expressly permitted in writing
+   by the copyright holder.
+2. Purchasers of a valid WhimprFlow license receive a personal, non-transferable
+   right to use the application under the EULA.
+3. Contributions submitted to this repository are licensed to the copyright
+   holder under the same proprietary terms unless a separate contributor
+   agreement says otherwise.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. See the EULA
+for the full warranty disclaimer and liability limits.
+
+Third-party open-source components bundled with WhimprFlow remain under their
+own licenses (see notices in Cargo.lock / ui/package-lock.json and upstream
+projects).

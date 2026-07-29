@@ -1,9 +1,11 @@
 //! Cloud cleanup providers. The OpenAI provider (default cloud) sends the shared
 //! WhimprFlow system prompt plus the assembled context and returns cleaned text.
-//! On any failure the caller falls back to the raw transcript  -  cleanup is an
+//! On any failure the caller falls back to the raw transcript - cleanup is an
 //! enhancement, never a gate.
 
-use std::time::Duration;
+mod http;
+
+pub use http::{rate, validate_base_url};
 
 use whimpr_core::cleanup::{
     build_command_messages, build_messages, CleanupContext, CleanupProvider, ProviderId,
@@ -41,12 +43,23 @@ impl OpenAiProvider {
         model: impl Into<String>,
         base_url: Option<String>,
     ) -> Self {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .expect("failed to build HTTP client");
+        let client = http::client();
         let url = match base_url.map(|s| s.trim().trim_end_matches('/').to_string()) {
-            Some(base) if !base.is_empty() => format!("{base}/chat/completions"),
+            Some(base) if !base.is_empty() => {
+                // Soft-fail validation at construction: an invalid URL falls
+                // back to the OpenAI default rather than shipping a client that
+                // will POST a bearer token to a private host. Callers that want
+                // a hard error should call [`validate_base_url`] first.
+                if http::validate_base_url(&base).is_err() {
+                    eprintln!(
+                        "[whimpr-cleanup] rejecting unsafe openai_base_url ({base}); \
+                         using the OpenAI default endpoint"
+                    );
+                    OPENAI_DEFAULT_URL.to_string()
+                } else {
+                    format!("{base}/chat/completions")
+                }
+            }
             _ => OPENAI_DEFAULT_URL.to_string(),
         };
         Self {
@@ -64,6 +77,7 @@ impl CleanupProvider for OpenAiProvider {
     }
 
     fn cleanup(&self, raw: &str, ctx: &CleanupContext) -> anyhow::Result<String> {
+        http::rate::check()?;
         // System prompt + few-shot demonstration turns + the real transcript.
         let messages: Vec<serde_json::Value> = build_messages(raw, ctx)
             .into_iter()
@@ -105,6 +119,7 @@ impl CleanupProvider for OpenAiProvider {
     /// `build_command_messages` (instruction-following rewrite) instead of
     /// `build_messages` (conservative transcript cleanup).
     fn command_edit(&self, selection: &str, instruction: &str) -> anyhow::Result<String> {
+        http::rate::check()?;
         let messages: Vec<serde_json::Value> = build_command_messages(selection, instruction)?
             .into_iter()
             .map(|m| serde_json::json!({ "role": m.role, "content": m.content }))
@@ -156,12 +171,8 @@ pub struct AnthropicProvider {
 
 impl AnthropicProvider {
     pub fn new(api_key: String, model: impl Into<String>) -> Self {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .expect("failed to build HTTP client");
         Self {
-            client,
+            client: http::client(),
             api_key,
             model: model.into(),
         }
@@ -174,6 +185,7 @@ impl CleanupProvider for AnthropicProvider {
     }
 
     fn cleanup(&self, raw: &str, ctx: &CleanupContext) -> anyhow::Result<String> {
+        http::rate::check()?;
         // Anthropic takes the system prompt top-level; the few-shot turns and the
         // real transcript go in `messages` as user/assistant turns.
         let mut system = String::new();
@@ -223,6 +235,7 @@ impl CleanupProvider for AnthropicProvider {
     /// `build_command_messages` (instruction-following rewrite) instead of
     /// `build_messages` (conservative transcript cleanup).
     fn command_edit(&self, selection: &str, instruction: &str) -> anyhow::Result<String> {
+        http::rate::check()?;
         let mut system = String::new();
         let mut messages: Vec<serde_json::Value> = Vec::new();
         for m in build_command_messages(selection, instruction)? {

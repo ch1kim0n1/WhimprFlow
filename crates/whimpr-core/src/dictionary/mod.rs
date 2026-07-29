@@ -134,10 +134,7 @@ impl DictionaryStore {
     /// Load from `path`, returning an empty store if missing or unreadable.
     /// Backfills phonetic codes for entries persisted before that field existed.
     pub fn load(path: &Path) -> Self {
-        let mut store: Self = std::fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
+        let mut store: Self = crate::json_store::load_or_recover(path);
         for e in &mut store.entries {
             e.ensure_phonetic();
         }

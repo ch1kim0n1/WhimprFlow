@@ -56,13 +56,54 @@ pub struct WorkflowStore {
     pub entries: Vec<WorkflowEntry>,
 }
 
+/// Built-in template shown in the Hub before the user creates custom workflows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkflowPreset {
+    pub name: String,
+    pub trigger: String,
+    pub instruction: String,
+    pub destination: WorkflowDestination,
+    pub require_approval: bool,
+}
+
+/// Four starter templates for new users.
+pub fn workflow_presets() -> Vec<WorkflowPreset> {
+    vec![
+        WorkflowPreset {
+            name: "Email".into(),
+            trigger: "email".into(),
+            instruction: "Rewrite as a clear, formal email. Use a greeting and sign-off when appropriate.".into(),
+            destination: WorkflowDestination::Paste,
+            require_approval: false,
+        },
+        WorkflowPreset {
+            name: "Slack message".into(),
+            trigger: "slack".into(),
+            instruction: "Rewrite as a short, casual chat message suitable for Slack.".into(),
+            destination: WorkflowDestination::Paste,
+            require_approval: false,
+        },
+        WorkflowPreset {
+            name: "Meeting notes".into(),
+            trigger: "notes".into(),
+            instruction: "Rewrite as structured meeting notes with bullets for decisions and action items.".into(),
+            destination: WorkflowDestination::Note,
+            require_approval: false,
+        },
+        WorkflowPreset {
+            name: "Code comment".into(),
+            trigger: "comment".into(),
+            instruction: "Rewrite as a terse code comment. Prefer clarity over flourish; keep identifiers intact.".into(),
+            destination: WorkflowDestination::Paste,
+            require_approval: false,
+        },
+    ]
+}
+
 impl WorkflowStore {
     /// Load from `path`, returning an empty store if missing or unreadable.
     pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        crate::json_store::load_or_recover(path)
     }
 
     /// Persist to `path` (creating parent dirs).
@@ -327,6 +368,12 @@ mod tests {
         assert!(s.remove("JIRA"));
         assert!(s.find_match("jira it something").is_none());
         assert!(!s.remove("jira"), "second removal finds nothing left");
+    }
+
+    #[test]
+    fn built_in_presets_are_four() {
+        assert_eq!(workflow_presets().len(), 4);
+        assert!(workflow_presets().iter().any(|p| p.name == "Email"));
     }
 
     #[test]

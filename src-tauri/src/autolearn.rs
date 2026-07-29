@@ -2,6 +2,8 @@
 //! for a few seconds. If the user corrects a single distinctive word (typically a
 //! mis-heard name), diff it out and add it to the dictionary  -  so next time ASR/
 //! cleanup spell it right. This is the signal source Wispr's ✨ sparkle needs.
+
+#![allow(dead_code)] // macOS-only learning helpers stay compiled on Windows for parity
 //!
 //! It is deliberately conservative: it only learns on a clean one-word substitution
 //! into an otherwise-unchanged field, where the new word looks like a proper noun
@@ -142,7 +144,7 @@ mod imp {
             unsafe { CFRelease(holder.0) };
             let Some(after) = after else { return };
             if let Some((mishear, correct)) = super::detect_correction(&inserted, &after) {
-                eprintln!("[whimpr] ✨ auto-learned: \"{mishear}\" -> \"{correct}\"");
+                tracing::info!(target: "whimpr", "[whimpr] ✨ auto-learned: \"{mishear}\" -> \"{correct}\"");
                 // Voice Memory keeps the auditable log of every learned
                 // correction; the dictionary keeps the working spelling rule.
                 crate::hotkey::voice_memory_record(mishear.clone(), correct.clone(), "autolearn");

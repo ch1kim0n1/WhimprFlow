@@ -3,6 +3,7 @@ import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { font } from "../tokens/values";
 import { theme } from "./theme";
 import { Button, Card, PageTitle, Segmented } from "./ui";
+import { EmptyState } from "./EmptyState";
 import { Icon } from "./icons";
 import { dayKey, dayLabel, fmtTimeOfDay } from "./format";
 import {
@@ -543,9 +544,16 @@ function NotesTab() {
 
       <Card pad={notes.length ? 8 : 22}>
         {notes.length === 0 ? (
-          <div style={{ padding: "36px 8px", textAlign: "center", color: theme.textFaint, fontSize: 13.5 }}>
-            {loaded ? "No notes yet." : "Loading notes..."}
-          </div>
+          loaded ? (
+            <EmptyState
+              title="Scratchpad is empty"
+              body="Notes you create during dictation appear here."
+            />
+          ) : (
+            <div style={{ padding: "36px 8px", textAlign: "center", color: theme.textFaint, fontSize: 13.5 }}>
+              Loading notes...
+            </div>
+          )
         ) : (
           <div style={{ padding: "4px 14px" }}>
             {notes.map((n) => (
