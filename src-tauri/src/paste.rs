@@ -270,6 +270,61 @@ mod imp {
         crate::feedback::play_complete();
         Ok(())
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn key_event_down_produces_keyboard_input() {
+            let ev = key_event(VK_V.0, false);
+            assert_eq!(ev.r#type, INPUT_KEYBOARD);
+        }
+
+        #[test]
+        fn key_event_up_produces_keyboard_input() {
+            let ev = key_event(VK_V.0, true);
+            assert_eq!(ev.r#type, INPUT_KEYBOARD);
+        }
+
+        #[test]
+        fn ctrl_v_paste_sequence_has_four_events() {
+            let ctrl_v = [
+                key_event(VK_CONTROL.0, false),
+                key_event(VK_V.0, false),
+                key_event(VK_V.0, true),
+                key_event(VK_CONTROL.0, true),
+            ];
+            assert_eq!(ctrl_v.len(), 4);
+            for ev in &ctrl_v {
+                assert_eq!(ev.r#type, INPUT_KEYBOARD);
+            }
+        }
+
+        #[test]
+        fn shift_insert_fallback_sequence_has_four_events() {
+            let shift_insert = [
+                key_event(VK_SHIFT.0, false),
+                key_event(VK_INSERT.0, false),
+                key_event(VK_INSERT.0, true),
+                key_event(VK_SHIFT.0, true),
+            ];
+            assert_eq!(shift_insert.len(), 4);
+            for ev in &shift_insert {
+                assert_eq!(ev.r#type, INPUT_KEYBOARD);
+            }
+        }
+
+        #[test]
+        fn is_trusted_returns_true_on_windows() {
+            assert!(is_trusted());
+        }
+
+        #[test]
+        fn input_monitoring_granted_returns_true_on_windows() {
+            assert!(input_monitoring_granted());
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]

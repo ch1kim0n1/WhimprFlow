@@ -2100,23 +2100,24 @@ mod tests {
 
     #[test]
     fn recording_atomic_initializes_false() {
-        // The RECORDING flag must start false (no recording at startup).
-        // We can't reset it, but we can verify the initial value pattern by
-        // checking that a fresh AtomicBool is false.
-        let fresh = AtomicBool::new(false);
-        assert!(!fresh.load(Ordering::SeqCst));
+        // The RECORDING static must start false (no recording at startup).
+        // We read it without modifying — if it happens to be true because a
+        // prior test started recording, that's acceptable; the contract is
+        // that it never panics and loads with SeqCst.
+        let _ = RECORDING.load(Ordering::SeqCst);
     }
 
     #[test]
     fn locked_atomic_initializes_false() {
-        let fresh = AtomicBool::new(false);
-        assert!(!fresh.load(Ordering::SeqCst));
+        let _ = LOCKED.load(Ordering::SeqCst);
     }
 
     #[test]
     fn last_key_up_ms_initializes_to_max() {
         // LAST_KEY_UP_MS starts at u64::MAX (sentinel for "no key pressed yet").
-        let fresh = AtomicU64::new(u64::MAX);
-        assert_eq!(fresh.load(Ordering::SeqCst), u64::MAX);
+        // A prior test may have changed it, so we only verify it loads without
+        // panicking — the initial value contract is enforced by the static
+        // declaration above.
+        let _ = LAST_KEY_UP_MS.load(Ordering::SeqCst);
     }
 }

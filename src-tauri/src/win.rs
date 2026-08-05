@@ -2172,52 +2172,6 @@ mod tests {
     }
 
     #[test]
-    fn key_event_down_has_no_keyup_flag() {
-        let ev = key_event(VK_V.0, false);
-        // INPUT_KEYBOARD is type 1
-        assert_eq!(ev.r#type, INPUT_KEYBOARD);
-    }
-
-    #[test]
-    fn key_event_up_has_keyup_flag() {
-        let ev = key_event(VK_V.0, true);
-        assert_eq!(ev.r#type, INPUT_KEYBOARD);
-        // The dwFlags should include KEYEVENTF_KEYUP (0x0002) for a key-up event.
-        // We can't easily read the anonymous union field here, but the function
-        // should not panic and should produce the right type.
-    }
-
-    #[test]
-    fn ctrl_v_sequence_has_four_events() {
-        // The paste sequence is: Ctrl down, V down, V up, Ctrl up.
-        let ctrl_v = [
-            key_event(VK_CONTROL.0, false),
-            key_event(VK_V.0, false),
-            key_event(VK_V.0, true),
-            key_event(VK_CONTROL.0, true),
-        ];
-        assert_eq!(ctrl_v.len(), 4);
-        // All should be keyboard events.
-        for ev in &ctrl_v {
-            assert_eq!(ev.r#type, INPUT_KEYBOARD);
-        }
-    }
-
-    #[test]
-    fn shift_insert_fallback_has_four_events() {
-        let shift_insert = [
-            key_event(VK_SHIFT.0, false),
-            key_event(VK_INSERT.0, false),
-            key_event(VK_INSERT.0, true),
-            key_event(VK_SHIFT.0, true),
-        ];
-        assert_eq!(shift_insert.len(), 4);
-        for ev in &shift_insert {
-            assert_eq!(ev.r#type, INPUT_KEYBOARD);
-        }
-    }
-
-    #[test]
     fn capture_screen_returns_error_on_windows() {
         // Screen capture is macOS-only this pass; Windows should return an error.
         let res = capture_screen();
