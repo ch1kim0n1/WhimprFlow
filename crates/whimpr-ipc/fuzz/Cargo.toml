@@ -1,0 +1,21 @@
+[package]
+name = "whimpr-ipc-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+whimpr-ipc = { path = ".." }
+serde = { version = "1", features = ["derive"] }
+
+[[bin]]
+name = "fuzz_codec"
+path = "fuzz_targets/fuzz_codec.rs"
+
+[[bin]]
+name = "fuzz_decode"
+path = "fuzz_targets/fuzz_decode.rs"

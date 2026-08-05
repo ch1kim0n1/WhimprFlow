@@ -30,3 +30,6 @@ src-tauri/gen/
 /secrets/
 !.env.example
 
+# Devin workspace
+.devin/
+

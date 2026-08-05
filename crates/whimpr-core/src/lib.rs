@@ -15,6 +15,7 @@ pub mod cleanup;
 pub mod dictionary;
 pub mod json_store;
 pub mod license;
+pub mod machine_id;
 pub mod model_magic;
 pub mod safety;
 pub mod settings;

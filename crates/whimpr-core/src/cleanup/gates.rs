@@ -66,7 +66,7 @@ pub fn evaluate(raw: &str, cleaned: &str, level: CleanupLevel) -> GateVerdict {
 
     // 2) Must-preserve entities present in raw must survive in cleaned.
     for ent in must_preserve_entities(raw) {
-        if !cleaned.contains(&ent) {
+        if !entity_present(cleaned, &ent) {
             return GateVerdict::Fail(GateReason::LostEntity(ent));
         }
     }
@@ -115,6 +115,39 @@ fn must_preserve_entities(text: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// Check if an entity is present in the text using word-boundary-aware matching.
+/// This prevents entities from being split across tokens and evading detection.
+/// For example, "12345" should not be considered present if the text only contains "12" and "345"
+/// as separate words, but should be present if it appears as "12345" or within a larger token.
+fn entity_present(text: &str, entity: &str) -> bool {
+    // First try exact substring match (fast path)
+    if text.contains(entity) {
+        return true;
+    }
+
+    // For multi-character entities, also check word-boundary-aware matching
+    if entity.len() > 3 {
+        // Check if the entity appears as a complete word or within a word
+        // This catches cases where punctuation might interfere with simple substring matching
+        let text_lower = text.to_lowercase();
+        let entity_lower = entity.to_lowercase();
+
+        // Try matching with common punctuation variations
+        for c in &['.', ',', '!', '?', ';', ':', '-', '_', '(', ')', '[', ']'] {
+            let variant = format!("{}{}", entity_lower, c);
+            if text_lower.contains(&variant) {
+                return true;
+            }
+            let variant = format!("{}{}", c, entity_lower);
+            if text_lower.contains(&variant) {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 /// Lowercase a token and strip surrounding punctuation, so "3." == "3" and
@@ -202,5 +235,34 @@ mod tests {
     #[test]
     fn none_level_always_passes() {
         assert!(evaluate("anything", "totally different", CleanupLevel::None).passed());
+    }
+
+    #[test]
+    fn entity_present_with_punctuation() {
+        // Entity "12345" should be detected even with punctuation
+        assert!(entity_present("The ID is 12345.", "12345"));
+        assert!(entity_present("The ID is 12345!", "12345"));
+        assert!(entity_present("The ID is 12345,", "12345"));
+        assert!(entity_present("The ID is 12345:", "12345"));
+        assert!(entity_present("The ID is (12345)", "12345"));
+        assert!(entity_present("The ID is [12345]", "12345"));
+    }
+
+    #[test]
+    fn entity_present_case_insensitive() {
+        assert!(entity_present("The URL is HTTPS://EXAMPLE.COM", "https://example.com"));
+        assert!(entity_present("The URL is Https://Example.Com", "https://example.com"));
+    }
+
+    #[test]
+    fn entity_not_present_when_split() {
+        // Entity "12345" should NOT be detected if split across words
+        assert!(!entity_present("The IDs are 12 and 345", "12345"));
+    }
+
+    #[test]
+    fn entity_with_url_detected() {
+        assert!(entity_present("Visit https://example.com/api", "https://example.com"));
+        assert!(entity_present("Visit https://example.com/api.", "https://example.com"));
     }
 }

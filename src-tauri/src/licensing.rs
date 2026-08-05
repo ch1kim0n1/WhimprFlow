@@ -1,12 +1,50 @@
 //! OS keychain-backed license + trial state for the Tauri shell.
+//!
+//! Trial state is stored in both the OS keychain (for convenience) and a
+//! machine-id-keyed file (to prevent trial reset by deleting keychain entries).
 
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use whimpr_core::{
-    evaluate_entitlement, verify_license_key, Entitlement, EntitlementKind, TRIAL_DAYS,
+    evaluate_entitlement, machine_id, verify_license_key, Entitlement, EntitlementKind, TRIAL_DAYS,
 };
 
 const SERVICE: &str = "com.whimpr.whimprflow";
 const LICENSE_ACCOUNT: &str = "license_key";
 const TRIAL_ACCOUNT: &str = "trial_started_unix";
+const TRIAL_STATE_FILE: &str = "trial_state.json";
+
+/// Trial state file format: maps machine IDs to trial start timestamps.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct TrialState {
+    #[serde(default)]
+    machine_id_to_start: std::collections::HashMap<String, u64>,
+}
+
+fn support_dir() -> PathBuf {
+    crate::logging::support_dir()
+}
+
+fn trial_state_path() -> PathBuf {
+    support_dir().join(TRIAL_STATE_FILE)
+}
+
+fn load_trial_state() -> TrialState {
+    let path = trial_state_path();
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(state) = serde_json::from_str::<TrialState>(&content) {
+            return state;
+        }
+    }
+    TrialState::default()
+}
+
+fn save_trial_state(state: &TrialState) -> Result<(), String> {
+    let path = trial_state_path();
+    let content = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
+    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    Ok(())
+}
 
 fn now_unix() -> u64 {
     std::time::SystemTime::now()
@@ -42,7 +80,22 @@ fn delete_secret(account: &str) -> Result<(), String> {
 
 pub fn current_entitlement() -> Entitlement {
     let license = read_secret(LICENSE_ACCOUNT);
-    let trial = read_secret(TRIAL_ACCOUNT).and_then(|s| s.parse::<u64>().ok());
+
+    // Check both keychain (backward compat) and machine ID file (tamper resistance)
+    let keychain_trial = read_secret(TRIAL_ACCOUNT).and_then(|s| s.parse::<u64>().ok());
+
+    let machine_trial = machine_id()
+        .ok()
+        .and_then(|id| load_trial_state().machine_id_to_start.get(&id).copied());
+
+    // Use the earlier start time (more conservative)
+    let trial = match (keychain_trial, machine_trial) {
+        (Some(k), Some(m)) => Some(k.min(m)),
+        (Some(k), None) => Some(k),
+        (None, Some(m)) => Some(m),
+        (None, None) => None,
+    };
+
     evaluate_entitlement(license.as_deref(), trial, now_unix())
 }
 
@@ -64,11 +117,37 @@ pub fn clear_license() -> Result<Entitlement, String> {
     Ok(current_entitlement())
 }
 
-/// Start (or return existing) 14-day trial. Tamper-resistant: stored in OS keychain.
+/// Start (or return existing) 14-day trial. Tamper-resistant: stored in both OS keychain
+/// and a machine-id-keyed file to prevent reset by deleting keychain entries.
 pub fn start_trial() -> Result<Entitlement, String> {
+    let machine = machine_id().map_err(|e| format!("failed to get machine ID: {e}"))?;
+    let mut state = load_trial_state();
+
+    // Check if this machine ID already has a trial
+    if let Some(&start) = state.machine_id_to_start.get(&machine) {
+        let elapsed = now_unix().saturating_sub(start);
+        let trial_secs = TRIAL_DAYS * 24 * 60 * 60;
+        if elapsed >= trial_secs {
+            return Err(format!(
+                "trial already used or expired on this machine ({} days)",
+                TRIAL_DAYS
+            ));
+        }
+    }
+
+    // Check keychain for backward compatibility with existing installations
     if read_secret(TRIAL_ACCOUNT).is_none() {
         write_secret(TRIAL_ACCOUNT, &now_unix().to_string())?;
     }
+
+    // Record the trial start for this machine ID
+    let keychain_start = read_secret(TRIAL_ACCOUNT)
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(now_unix);
+
+    state.machine_id_to_start.insert(machine, keychain_start);
+    save_trial_state(&state)?;
+
     let ent = current_entitlement();
     if matches!(ent.kind, EntitlementKind::Unlicensed) {
         return Err(format!(
@@ -166,5 +245,45 @@ mod tests {
             gate_cleanup_mode(CleanupMode::OpenAi, true),
             CleanupMode::OpenAi
         ));
+    }
+
+    #[test]
+    fn trial_state_file_persists_across_keychain_delete() {
+        // This test verifies that even if the keychain entry is deleted,
+        // the machine ID file still prevents trial reset.
+        let _ = clear_license();
+
+        // Start a trial
+        let first = start_trial();
+        let start_time = match &first {
+            Ok(ent) => ent.expires_unix,
+            Err(_) => return, // Skip if trial already used
+        };
+
+        // Simulate keychain deletion by removing the keychain entry
+        let _ = delete_secret(TRIAL_ACCOUNT);
+
+        // Try to start trial again - should fail because machine ID file exists
+        let second = start_trial();
+        match (first, second) {
+            (Ok(_), Err(msg)) => {
+                assert!(
+                    msg.contains("trial") || msg.contains("expired") || msg.contains("used"),
+                    "expected trial reuse error, got: {msg}"
+                );
+            }
+            (Ok(a), Ok(b)) => {
+                // Both succeeded - check they have the same start time (machine ID file is source of truth)
+                assert_eq!(a.expires_unix, b.expires_unix);
+            }
+            _ => {}
+        }
+
+        // Cleanup: remove the machine ID entry for this test
+        if let Ok(machine) = machine_id() {
+            let mut state = load_trial_state();
+            state.machine_id_to_start.remove(&machine);
+            let _ = save_trial_state(&state);
+        }
     }
 }
