@@ -41,6 +41,10 @@ fn load_trial_state() -> TrialState {
 
 fn save_trial_state(state: &TrialState) -> Result<(), String> {
     let path = trial_state_path();
+    // Ensure the support directory exists before writing
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
     let content = serde_json::to_string_pretty(state).map_err(|e| e.to_string())?;
     std::fs::write(&path, content).map_err(|e| e.to_string())?;
     Ok(())
@@ -119,34 +123,49 @@ pub fn clear_license() -> Result<Entitlement, String> {
 
 /// Start (or return existing) 14-day trial. Tamper-resistant: stored in both OS keychain
 /// and a machine-id-keyed file to prevent reset by deleting keychain entries.
+/// Falls back to keychain-only if machine ID is unavailable (degraded tamper resistance).
 pub fn start_trial() -> Result<Entitlement, String> {
-    let machine = machine_id().map_err(|e| format!("failed to get machine ID: {e}"))?;
+    let machine = machine_id();
     let mut state = load_trial_state();
 
     // Check if this machine ID already has a trial
-    if let Some(&start) = state.machine_id_to_start.get(&machine) {
-        let elapsed = now_unix().saturating_sub(start);
-        let trial_secs = TRIAL_DAYS * 24 * 60 * 60;
-        if elapsed >= trial_secs {
-            return Err(format!(
-                "trial already used or expired on this machine ({} days)",
-                TRIAL_DAYS
-            ));
+    if let Ok(ref machine_id) = machine {
+        if let Some(&start) = state.machine_id_to_start.get(machine_id) {
+            let elapsed = now_unix().saturating_sub(start);
+            let trial_secs = TRIAL_DAYS * 24 * 60 * 60;
+            if elapsed >= trial_secs {
+                return Err(format!(
+                    "trial already used or expired on this machine ({} days)",
+                    TRIAL_DAYS
+                ));
+            }
+            // Trial is still active - restore keychain if missing, but keep the
+            // original start time from the machine ID file (the tamper-proof source).
+            if read_secret(TRIAL_ACCOUNT).is_none() {
+                let _ = write_secret(TRIAL_ACCOUNT, &start.to_string());
+            }
+            return Ok(current_entitlement());
         }
     }
 
-    // Check keychain for backward compatibility with existing installations
+    // No trial on this machine yet (or machine ID unavailable) - start a new one
+    let now = now_unix();
     if read_secret(TRIAL_ACCOUNT).is_none() {
-        write_secret(TRIAL_ACCOUNT, &now_unix().to_string())?;
+        write_secret(TRIAL_ACCOUNT, &now.to_string())?;
     }
 
-    // Record the trial start for this machine ID
-    let keychain_start = read_secret(TRIAL_ACCOUNT)
+    // Use the earlier of keychain or now (in case keychain had an older timestamp
+    // from a partial previous attempt)
+    let start = read_secret(TRIAL_ACCOUNT)
         .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or_else(now_unix);
+        .map(|k| k.min(now))
+        .unwrap_or(now);
 
-    state.machine_id_to_start.insert(machine, keychain_start);
-    save_trial_state(&state)?;
+    // Record in machine ID file if available
+    if let Ok(ref machine_id) = machine {
+        state.machine_id_to_start.insert(machine_id.clone(), start);
+        save_trial_state(&state)?;
+    }
 
     let ent = current_entitlement();
     if matches!(ent.kind, EntitlementKind::Unlicensed) {
@@ -255,7 +274,7 @@ mod tests {
 
         // Start a trial
         let first = start_trial();
-        let start_time = match &first {
+        let first_expiry = match &first {
             Ok(ent) => ent.expires_unix,
             Err(_) => return, // Skip if trial already used
         };
@@ -263,7 +282,8 @@ mod tests {
         // Simulate keychain deletion by removing the keychain entry
         let _ = delete_secret(TRIAL_ACCOUNT);
 
-        // Try to start trial again - should fail because machine ID file exists
+        // Try to start trial again - should either fail (trial already used)
+        // or succeed with the SAME expiry (machine ID file is source of truth)
         let second = start_trial();
         match (first, second) {
             (Ok(_), Err(msg)) => {
@@ -273,8 +293,9 @@ mod tests {
                 );
             }
             (Ok(a), Ok(b)) => {
-                // Both succeeded - check they have the same start time (machine ID file is source of truth)
-                assert_eq!(a.expires_unix, b.expires_unix);
+                // Both succeeded - must have the same expiry (machine ID file preserved start)
+                assert_eq!(a.expires_unix, b.expires_unix, "trial start time changed after keychain delete");
+                assert_eq!(a.expires_unix, first_expiry);
             }
             _ => {}
         }

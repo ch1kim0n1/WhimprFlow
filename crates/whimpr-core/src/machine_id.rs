@@ -37,36 +37,41 @@ fn macos_machine_id() -> Result<String, String> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        if line.contains("IOPlatformSerialNumber") {
-            if let Some(start) = line.find('"') {
-                if let Some(end) = line.rfind('"') {
-                    let serial = &line[start + 1..end];
-                    if !serial.is_empty() {
-                        return Ok(format!("macos:{serial}"));
+
+    // ioreg lines look like: "IOPlatformSerialNumber" = "C02X1234XYZ"
+    // We need to extract the value after the `= "` and before the closing `"`.
+    fn extract_quoted_value(line: &str, field: &str) -> Option<String> {
+        if !line.contains(field) {
+            return None;
+        }
+        // Find the `= "` part and extract until the next `"`
+        if let Some(eq_pos) = line.find('=') {
+            let after_eq = &line[eq_pos + 1..];
+            // Find the first `"` after `=`
+            if let Some(open) = after_eq.find('"') {
+                let rest = &after_eq[open + 1..];
+                // Find the closing `"`
+                if let Some(close) = rest.find('"') {
+                    let value = &rest[..close];
+                    if !value.is_empty() {
+                        return Some(value.to_string());
                     }
                 }
             }
         }
+        None
     }
 
-    // Fallback to hardware UUID
-    let output = Command::new("ioreg")
-        .args(["-rd1", "-c", "IOPlatformExpertDevice"])
-        .output()
-        .map_err(|e| format!("failed to run ioreg for UUID: {e}"))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Try serial number first, then UUID
     for line in stdout.lines() {
-        if line.contains("IOPlatformUUID") {
-            if let Some(start) = line.find('"') {
-                if let Some(end) = line.rfind('"') {
-                    let uuid = &line[start + 1..end];
-                    if !uuid.is_empty() {
-                        return Ok(format!("macos:{uuid}"));
-                    }
-                }
-            }
+        if let Some(serial) = extract_quoted_value(line, "IOPlatformSerialNumber") {
+            return Ok(format!("macos:{serial}"));
+        }
+    }
+
+    for line in stdout.lines() {
+        if let Some(uuid) = extract_quoted_value(line, "IOPlatformUUID") {
+            return Ok(format!("macos:{uuid}"));
         }
     }
 

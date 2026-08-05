@@ -127,14 +127,17 @@ fn entity_present(text: &str, entity: &str) -> bool {
         return true;
     }
 
-    // For multi-character entities, also check word-boundary-aware matching
+    // For multi-character entities, also check case-insensitive and punctuation-aware matching
     if entity.len() > 3 {
-        // Check if the entity appears as a complete word or within a word
-        // This catches cases where punctuation might interfere with simple substring matching
         let text_lower = text.to_lowercase();
         let entity_lower = entity.to_lowercase();
 
-        // Try matching with common punctuation variations
+        // Case-insensitive substring match
+        if text_lower.contains(&entity_lower) {
+            return true;
+        }
+
+        // Try matching with common punctuation variations (entity followed by or preceded by punctuation)
         for c in &['.', ',', '!', '?', ';', ':', '-', '_', '(', ')', '[', ']'] {
             let variant = format!("{}{}", entity_lower, c);
             if text_lower.contains(&variant) {
