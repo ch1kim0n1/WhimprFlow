@@ -675,4 +675,169 @@ mod tests {
         let cmd_shift_v = Chord::new(true, false, false, true, Key::Char('V'));
         assert!(cmd_shift_v.has_any_modifier());
     }
+
+    // ── Edge case coverage: settings validation, strip_fillers, retention ──
+
+    #[test]
+    fn validate_keybindings_empty_for_defaults() {
+        let kb = KeyBindings::default();
+        assert!(kb.validate_keybindings().is_empty(), "defaults must have no conflicts");
+    }
+
+    #[test]
+    fn validate_keybindings_detects_all_collisions() {
+        // Set all four bindings to the same chord → 6 pairwise conflicts (4 choose 2).
+        let chord = Chord::new(true, false, false, false, Key::Char('X'));
+        let kb = KeyBindings {
+            cancel: chord,
+            paste_last: chord,
+            copy_last: chord,
+            undo_last: chord,
+        };
+        let conflicts = kb.validate_keybindings();
+        // 4 bindings, all same → C(4,2) = 6 pairs.
+        assert_eq!(conflicts.len(), 6, "4 identical bindings → 6 pairwise conflicts");
+    }
+
+    #[test]
+    fn validate_keybindings_detects_partial_collision() {
+        // Only two bindings collide.
+        let kb = KeyBindings {
+            paste_last: Chord::new(true, false, false, false, Key::Char('P')),
+            copy_last: Chord::new(true, false, false, false, Key::Char('P')),
+            ..KeyBindings::default()
+        };
+        let conflicts = kb.validate_keybindings();
+        assert_eq!(conflicts.len(), 1, "one pair collides");
+        assert!(conflicts[0].contains("paste_last") || conflicts[0].contains("copy_last"));
+    }
+
+    #[test]
+    fn strip_fillers_empty_list_returns_unchanged() {
+        let out = strip_fillers("um hello world", &[]);
+        assert_eq!(out, "um hello world");
+    }
+
+    #[test]
+    fn strip_fillers_only_filler_words() {
+        let out = strip_fillers("um uh er", &default_fillers());
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn strip_fillers_case_insensitive() {
+        let out = strip_fillers("UM Hello UH World", &default_fillers());
+        assert_eq!(out, "Hello World");
+    }
+
+    #[test]
+    fn strip_fillers_preserves_punctuation_on_kept_words() {
+        // Filler "um" is stripped, but "hello," keeps its comma.
+        let out = strip_fillers("um hello, world", &default_fillers());
+        assert_eq!(out, "hello, world");
+    }
+
+    #[test]
+    fn strip_fillers_custom_list() {
+        let out = strip_fillers("like totally yeah", &["like".to_string(), "yeah".to_string()]);
+        assert_eq!(out, "totally");
+    }
+
+    #[test]
+    fn strip_fillers_empty_string() {
+        let out = strip_fillers("", &default_fillers());
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn strip_fillers_whitespace_only() {
+        let out = strip_fillers("   ", &default_fillers());
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn strip_auto_punctuation_removes_sentence_punctuation() {
+        let out = strip_auto_punctuation("Hello, world! How are you?");
+        assert_eq!(out, "Hello world How are you");
+    }
+
+    #[test]
+    fn strip_auto_punctuation_preserves_unicode_punctuation() {
+        // Unicode quotes are stripped, but other unicode chars survive.
+        let out = strip_auto_punctuation("“hello” — world");
+        assert_eq!(out, "hello — world");
+    }
+
+    #[test]
+    fn strip_auto_punctuation_empty_string() {
+        assert_eq!(strip_auto_punctuation(""), "");
+    }
+
+    #[test]
+    fn settings_save_and_load_round_trip() {
+        let tmp = std::env::temp_dir().join(format!("whimpr-settings-rt-{}", std::process::id()));
+        let _ = std::fs::remove_file(&tmp);
+        let s = Settings {
+            safe_mode: true,
+            language: Some("es".to_string()),
+            retention_days: Some(7),
+            ..Settings::default()
+        };
+        s.save(&tmp).unwrap();
+        let loaded = Settings::load(&tmp);
+        assert_eq!(loaded.safe_mode, true);
+        assert_eq!(loaded.language, Some("es".to_string()));
+        assert_eq!(loaded.retention_days, Some(7));
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn settings_load_missing_file_returns_default() {
+        let s = Settings::load(Path::new("/nonexistent/whimpr-settings.json"));
+        assert_eq!(s.cleanup_mode, CleanupMode::Local);
+        assert!(!s.safe_mode);
+    }
+
+    #[test]
+    fn settings_load_corrupt_file_returns_default() {
+        let tmp = std::env::temp_dir().join(format!("whimpr-settings-corrupt-{}", std::process::id()));
+        std::fs::write(&tmp, b"{ this is not valid json }").unwrap();
+        let s = Settings::load(&tmp);
+        assert_eq!(s.cleanup_mode, CleanupMode::Local, "corrupt file → default");
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn retention_days_zero_means_never_store_text() {
+        let s = Settings {
+            retention_days: Some(0),
+            ..Settings::default()
+        };
+        assert_eq!(s.retention_days, Some(0));
+    }
+
+    #[test]
+    fn retention_days_none_means_keep_forever() {
+        let s = Settings {
+            retention_days: None,
+            ..Settings::default()
+        };
+        assert_eq!(s.retention_days, None);
+    }
+
+    #[test]
+    fn chord_equality_and_inequality() {
+        let a = Chord::new(true, false, false, false, Key::Char('V'));
+        let b = Chord::new(true, false, false, false, Key::Char('V'));
+        let c = Chord::new(false, true, false, false, Key::Char('V'));
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn chord_escape_key() {
+        let esc = Chord::new(false, false, false, false, Key::Escape);
+        assert!(!esc.has_any_modifier());
+        assert!(matches!(esc.key, Key::Escape));
+    }
 }

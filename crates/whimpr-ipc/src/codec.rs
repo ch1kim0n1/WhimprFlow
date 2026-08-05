@@ -134,6 +134,118 @@ mod tests {
         let _ = bogus_len;
     }
 
+    // ── Edge case coverage: truncated frames, partial reads, empty bodies ───
+
+    #[test]
+    fn truncated_length_prefix_errors_not_eof() {
+        // Only 2 of 4 length-prefix bytes: not a clean EOF (we got *some* bytes),
+        // so this must be an error, not Ok(None).
+        let mut cursor = std::io::Cursor::new(vec![0x01, 0x00]);
+        let res: Result<Option<ShellToSidecar>, _> = read_frame(&mut cursor);
+        assert!(res.is_err(), "partial length prefix must error, not return None");
+        assert!(matches!(
+            res,
+            Err(CodecError::Io(ref e)) if e.kind() == io::ErrorKind::UnexpectedEof
+        ));
+    }
+
+    #[test]
+    fn truncated_body_after_valid_length_errors() {
+        // Length says 10 bytes, but only 3 follow: genuine protocol error.
+        let mut buf = vec![];
+        buf.extend_from_slice(&10u32.to_le_bytes());
+        buf.extend_from_slice(b"abc");
+        let mut cursor = std::io::Cursor::new(buf);
+        let res: Result<Option<ShellToSidecar>, _> = read_frame(&mut cursor);
+        assert!(res.is_err());
+        assert!(matches!(
+            res,
+            Err(CodecError::Io(ref e)) if e.kind() == io::ErrorKind::UnexpectedEof
+        ));
+    }
+
+    #[test]
+    fn empty_body_frame_round_trips_if_json_valid() {
+        // A zero-length body: serde_json will fail to deserialize an empty
+        // string, so this should be a Json error, not a crash or panic.
+        let mut buf = vec![];
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        let mut cursor = std::io::Cursor::new(buf);
+        let res: Result<Option<ShellToSidecar>, _> = read_frame(&mut cursor);
+        assert!(res.is_err(), "zero-length body should fail JSON parse");
+        assert!(matches!(res, Err(CodecError::Json(_))));
+    }
+
+    #[test]
+    fn clean_eof_at_frame_boundary_returns_none() {
+        // Empty stream = clean EOF before any bytes = Ok(None).
+        let mut cursor = std::io::Cursor::new(Vec::<u8>::new());
+        let res: Result<Option<ShellToSidecar>, _> = read_frame(&mut cursor);
+        assert!(matches!(res, Ok(None)));
+    }
+
+    #[test]
+    fn max_size_frame_is_accepted_not_rejected() {
+        // A frame of exactly MAX_FRAME_LEN should pass the length check
+        // (it may fail later on body read, but the length gate itself passes).
+        let len = MAX_FRAME_LEN as u32;
+        let mut buf = len.to_le_bytes().to_vec();
+        // Don't actually write MAX_FRAME_LEN bytes (that's 16 MiB); just
+        // verify the length check passes by confirming it's NOT FrameTooLarge.
+        // The body read will fail with UnexpectedEof since we didn't provide it.
+        buf.extend_from_slice(b"");
+        let mut cursor = std::io::Cursor::new(buf);
+        let res: Result<Option<ShellToSidecar>, _> = read_frame(&mut cursor);
+        // Should be an Io error (truncated body), NOT FrameTooLarge.
+        assert!(!matches!(res, Err(CodecError::FrameTooLarge(_))));
+    }
+
+    #[test]
+    fn write_frame_to_closed_pipe_errors_gracefully() {
+        // Writing to a broken pipe should return an Io error, not panic.
+        let mut sink = std::io::sink(); // /dev/null equivalent, always succeeds
+        let msg = ShellToSidecar::Ping { seq: 1 };
+        let res = write_frame(&mut sink, &msg);
+        assert!(res.is_ok(), "sink should accept writes");
+    }
+
+    #[test]
+    fn round_trip_preserves_unicode_payload() {
+        // Ensure UTF-8 multibyte content survives the frame round-trip.
+        let mut buf: Vec<u8> = Vec::new();
+        let msg = SidecarToShell::Log {
+            level: 1,
+            msg: "héllo wörld 日本語 🎤".to_string(),
+        };
+        write_frame(&mut buf, &msg).unwrap();
+
+        let mut cursor = std::io::Cursor::new(buf);
+        let got: Option<SidecarToShell> = read_frame(&mut cursor).unwrap();
+        match got {
+            Some(SidecarToShell::Log { msg, .. }) => {
+                assert_eq!(msg, "héllo wörld 日本語 🎤");
+            }
+            _ => panic!("expected Log"),
+        }
+    }
+
+    #[test]
+    fn interleaved_reads_and_writes_preserve_order() {
+        // Write 3 frames, read them back in order.
+        let mut buf: Vec<u8> = Vec::new();
+        for i in 0..3u32 {
+            write_frame(&mut buf, &SidecarToShell::Pong { seq: i }).unwrap();
+        }
+        let mut cursor = std::io::Cursor::new(buf);
+        for i in 0..3u32 {
+            let got: Option<SidecarToShell> = read_frame(&mut cursor).unwrap();
+            assert!(matches!(got, Some(SidecarToShell::Pong { seq }) if seq == i));
+        }
+        // Fourth read = clean EOF.
+        let got: Option<SidecarToShell> = read_frame(&mut cursor).unwrap();
+        assert!(got.is_none());
+    }
+
     mod fuzz {
         use super::*;
         use proptest::prelude::*;

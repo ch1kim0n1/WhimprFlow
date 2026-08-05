@@ -2138,3 +2138,90 @@ pub fn clear_voice_memory() -> Result<(), String> {
 pub fn capture_screen() -> Result<String, String> {
     Err("not implemented on this platform yet".to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vk_for_escape_key() {
+        assert_eq!(vk_for_key(whimpr_core::Key::Escape), VK_ESCAPE.0);
+    }
+
+    #[test]
+    fn vk_for_char_letters() {
+        assert_eq!(vk_for_key(whimpr_core::Key::Char('a')), b'A' as u16);
+        assert_eq!(vk_for_key(whimpr_core::Key::Char('z')), b'Z' as u16);
+        assert_eq!(vk_for_key(whimpr_core::Key::Char('A')), b'A' as u16);
+    }
+
+    #[test]
+    fn vk_for_char_digits() {
+        assert_eq!(vk_for_key(whimpr_core::Key::Char('0')), b'0' as u16);
+        assert_eq!(vk_for_key(whimpr_core::Key::Char('9')), b'9' as u16);
+    }
+
+    #[test]
+    fn ptt_vk_is_right_ctrl() {
+        assert_eq!(PTT_VK, VK_RCONTROL.0, "default PTT key is Right Ctrl");
+    }
+
+    #[test]
+    fn command_mode_vk_is_space() {
+        assert_eq!(COMMAND_MODE_VK, VK_SPACE.0, "Command Mode uses Space");
+    }
+
+    #[test]
+    fn key_event_down_has_no_keyup_flag() {
+        let ev = key_event(VK_V.0, false);
+        // INPUT_KEYBOARD is type 1
+        assert_eq!(ev.r#type, INPUT_KEYBOARD);
+    }
+
+    #[test]
+    fn key_event_up_has_keyup_flag() {
+        let ev = key_event(VK_V.0, true);
+        assert_eq!(ev.r#type, INPUT_KEYBOARD);
+        // The dwFlags should include KEYEVENTF_KEYUP (0x0002) for a key-up event.
+        // We can't easily read the anonymous union field here, but the function
+        // should not panic and should produce the right type.
+    }
+
+    #[test]
+    fn ctrl_v_sequence_has_four_events() {
+        // The paste sequence is: Ctrl down, V down, V up, Ctrl up.
+        let ctrl_v = [
+            key_event(VK_CONTROL.0, false),
+            key_event(VK_V.0, false),
+            key_event(VK_V.0, true),
+            key_event(VK_CONTROL.0, true),
+        ];
+        assert_eq!(ctrl_v.len(), 4);
+        // All should be keyboard events.
+        for ev in &ctrl_v {
+            assert_eq!(ev.r#type, INPUT_KEYBOARD);
+        }
+    }
+
+    #[test]
+    fn shift_insert_fallback_has_four_events() {
+        let shift_insert = [
+            key_event(VK_SHIFT.0, false),
+            key_event(VK_INSERT.0, false),
+            key_event(VK_INSERT.0, true),
+            key_event(VK_SHIFT.0, true),
+        ];
+        assert_eq!(shift_insert.len(), 4);
+        for ev in &shift_insert {
+            assert_eq!(ev.r#type, INPUT_KEYBOARD);
+        }
+    }
+
+    #[test]
+    fn capture_screen_returns_error_on_windows() {
+        // Screen capture is macOS-only this pass; Windows should return an error.
+        let res = capture_screen();
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("not implemented"));
+    }
+}

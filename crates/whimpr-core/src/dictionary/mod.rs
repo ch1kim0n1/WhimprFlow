@@ -300,4 +300,177 @@ mod tests {
             1
         );
     }
+
+    // ── Edge case coverage: unicode, empty entries, duplicates, large data ──
+
+    #[test]
+    fn add_unicode_entry_round_trips() {
+        let mut s = DictionaryStore::default();
+        s.add("日本語", vec!["にほんご".into()], DictSource::Manual);
+        assert_eq!(s.entries.len(), 1);
+        assert_eq!(s.entries[0].correct, "日本語");
+        assert_eq!(s.entries[0].mishears[0], "にほんご");
+    }
+
+    #[test]
+    fn add_entry_with_empty_mishears() {
+        let mut s = DictionaryStore::default();
+        s.add("TestWord", vec![], DictSource::Manual);
+        assert_eq!(s.entries.len(), 1);
+        assert!(s.entries[0].mishears.is_empty());
+    }
+
+    #[test]
+    fn add_duplicate_correct_merges_not_duplicates() {
+        let mut s = DictionaryStore::default();
+        s.add("Manvi", vec!["monvi".into()], DictSource::Manual);
+        s.add("Manvi", vec!["manvee".into()], DictSource::Manual);
+        assert_eq!(s.entries.len(), 1, "duplicate correct spelling should merge");
+        assert_eq!(s.entries[0].mishears.len(), 2);
+    }
+
+    #[test]
+    fn add_duplicate_mishear_is_not_duplicated() {
+        let mut s = DictionaryStore::default();
+        s.add("Manvi", vec!["monvi".into(), "Monvi".into()], DictSource::Manual);
+        // Case-insensitive dedup of mishears.
+        assert_eq!(s.entries[0].mishears.len(), 1, "case-insensitive mishear dedup");
+    }
+
+    #[test]
+    fn remove_nonexistent_returns_false() {
+        let mut s = store();
+        assert!(!s.remove("Nonexistent"));
+        assert!(s.remove("Manvi"));
+    }
+
+    #[test]
+    fn remove_is_case_insensitive() {
+        let mut s = store();
+        assert!(s.remove("manvi"), "remove should be case-insensitive");
+        assert!(s.entries.is_empty());
+    }
+
+    #[test]
+    fn prefilter_empty_utterance() {
+        let v = store().prefilter("", 15);
+        assert!(v.is_empty());
+    }
+
+    #[test]
+    fn prefilter_whitespace_only_utterance() {
+        let v = store().prefilter("   ", 15);
+        assert!(v.is_empty());
+    }
+
+    #[test]
+    fn prefilter_max_limit_is_respected() {
+        let mut s = DictionaryStore::default();
+        for i in 0..20 {
+            s.add(
+                &format!("Word{i}"),
+                vec![format!("word{i}")],
+                DictSource::Manual,
+            );
+        }
+        // An utterance containing all words → should be capped at max.
+        let utterance: String = (0..20)
+            .map(|i| format!("word{i} "))
+            .collect();
+        let v = s.prefilter(&utterance, 5);
+        assert!(v.len() <= 5, "prefilter should respect max limit");
+    }
+
+    #[test]
+    fn prefilter_punctuation_stripped_from_tokens() {
+        let mut s = DictionaryStore::default();
+        s.add("Manvi", vec!["monvi".into()], DictSource::Manual);
+        // "monvi." with a period should still match.
+        let v = s.prefilter("send to monvi. please", 15);
+        assert!(v.iter().any(|e| e.correct == "Manvi"));
+    }
+
+    #[test]
+    fn phonetic_codes_for_empty_string() {
+        let (p, a) = phonetic_codes("");
+        assert!(p.is_empty());
+        assert!(a.is_empty());
+    }
+
+    #[test]
+    fn phonetic_codes_for_whitespace_only() {
+        let (p, a) = phonetic_codes("   ");
+        assert!(p.is_empty());
+        assert!(a.is_empty());
+    }
+
+    #[test]
+    fn phonetic_match_empty_strings_dont_match() {
+        assert!(!phonetic_match("", ""));
+        assert!(!phonetic_match("", "hello"));
+        assert!(!phonetic_match("hello", ""));
+    }
+
+    #[test]
+    fn phonetic_match_similar_words() {
+        // "Smith" and "Smyth" should phonetically match.
+        assert!(phonetic_match("Smith", "Smyth"));
+    }
+
+    #[test]
+    fn is_common_word_case_insensitive() {
+        assert!(is_common_word("the"));
+        assert!(is_common_word("THE"));
+        assert!(is_common_word("The"));
+    }
+
+    #[test]
+    fn is_common_word_uncommon_word() {
+        assert!(!is_common_word("xyzzy"));
+    }
+
+    #[test]
+    fn save_and_load_round_trip() {
+        let tmp = std::env::temp_dir().join(format!("whimpr-dict-rt-{}", std::process::id()));
+        let _ = std::fs::remove_file(&tmp);
+        let mut s = store();
+        s.save(&tmp).unwrap();
+        let loaded = DictionaryStore::load(&tmp);
+        assert_eq!(loaded.entries.len(), 2);
+        assert!(loaded.entries.iter().any(|e| e.correct == "Manvi"));
+        assert!(loaded.entries.iter().any(|e| e.correct == "ChargeBee"));
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn load_missing_file_returns_empty() {
+        let s = DictionaryStore::load(std::path::Path::new("/nonexistent/whimpr-dict.json"));
+        assert!(s.entries.is_empty());
+    }
+
+    #[test]
+    fn load_corrupt_file_returns_empty() {
+        let tmp = std::env::temp_dir().join(format!("whimpr-dict-corrupt-{}", std::process::id()));
+        std::fs::write(&tmp, b"not valid json").unwrap();
+        let s = DictionaryStore::load(&tmp);
+        assert!(s.entries.is_empty(), "corrupt file → empty store");
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn load_backfills_phonetic_codes_for_old_entries() {
+        // Simulate an old entry without phonetic codes.
+        let tmp = std::env::temp_dir().join(format!("whimpr-dict-phonetic-{}", std::process::id()));
+        let old_json = r#"{"entries":[{"correct":"Manvi","mishears":["monvi"],"source":"manual"}]}"#;
+        std::fs::write(&tmp, old_json).unwrap();
+
+        let s = DictionaryStore::load(&tmp);
+        let e = &s.entries[0];
+        // After load, phonetic codes should be backfilled (non-empty for a real word).
+        assert!(
+            !e.phonetic_primary.is_empty() || !e.phonetic_alternate.is_empty(),
+            "phonetic codes should be backfilled on load"
+        );
+        let _ = std::fs::remove_file(&tmp);
+    }
 }

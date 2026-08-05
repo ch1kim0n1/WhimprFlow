@@ -403,4 +403,209 @@ mod tests {
             .iter()
             .any(|x| matches!(x, Action::StopCaptureAndFinalize { .. })));
     }
+
+    // ── Edge case coverage: concurrent triggers, cancel-during-cleanup, etc. ──
+
+    #[test]
+    fn cancel_during_finalizing_discards_session() {
+        // Cancel while in Finalizing state should discard the in-flight pipeline
+        // and return to Idle, not silently swallow the cancel.
+        let mut m = StateMachine::new();
+        m.step(down(BindingId::PushToTalk, 0));
+        m.step(up(BindingId::PushToTalk, 1_000)); // → Finalizing
+        assert!(matches!(m.state(), DictationState::Finalizing { .. }));
+        let a = m.step(Input::Trigger(TriggerToken::Cancel { at_ms: 1_200 }));
+        assert!(a.iter().any(|x| matches!(x, Action::DiscardCapture { .. })));
+        assert!(a
+            .iter()
+            .any(|x| matches!(x, Action::ShowBar(BarState::Cancelled))));
+        assert!(matches!(m.state(), DictationState::Idle));
+    }
+
+    #[test]
+    fn cancel_during_awaiting_lock_discards_nothing() {
+        // Cancel while waiting for a double-tap lock: no session is active,
+        // so no DiscardCapture should be emitted, just return to Idle.
+        let mut m = StateMachine::new();
+        m.step(down(BindingId::PushToTalk, 0));
+        m.step(up(BindingId::PushToTalk, 50)); // → AwaitingLock
+        assert!(matches!(m.state(), DictationState::AwaitingLock { .. }));
+        let a = m.step(Input::Trigger(TriggerToken::Cancel { at_ms: 100 }));
+        assert!(!a.iter().any(|x| matches!(x, Action::DiscardCapture { .. })));
+        assert!(a
+            .iter()
+            .any(|x| matches!(x, Action::ShowBar(BarState::Cancelled))));
+        assert!(matches!(m.state(), DictationState::Idle));
+    }
+
+    #[test]
+    fn cancel_in_idle_is_noop() {
+        let mut m = StateMachine::new();
+        let a = m.step(Input::Trigger(TriggerToken::Cancel { at_ms: 0 }));
+        assert!(a.is_empty(), "cancel in idle should be a no-op");
+        assert!(matches!(m.state(), DictationState::Idle));
+    }
+
+    #[test]
+    fn stray_up_in_idle_is_ignored() {
+        // A key-up event with no preceding key-down (e.g. the key was pressed
+        // before the app started) must not crash or transition state.
+        let mut m = StateMachine::new();
+        let a = m.step(up(BindingId::PushToTalk, 0));
+        assert!(a.is_empty());
+        assert!(matches!(m.state(), DictationState::Idle));
+    }
+
+    #[test]
+    fn mismatched_binding_up_is_ignored() {
+        // A HandsFree key-up while in a PushToTalk recording should be ignored,
+        // not finalize the session.
+        let mut m = StateMachine::new();
+        m.step(down(BindingId::PushToTalk, 0));
+        let a = m.step(up(BindingId::HandsFree, 1_000));
+        assert!(a.is_empty(), "mismatched binding up should be ignored");
+        assert!(matches!(
+            m.state(),
+            DictationState::Recording {
+                mode: RecordMode::PushToTalk,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn double_tap_after_window_expires_starts_new_session() {
+        // A second tap AFTER the double-tap window should start a fresh
+        // PushToTalk session, not lock into hands-free.
+        let mut m = StateMachine::new();
+        m.step(down(BindingId::PushToTalk, 0));
+        m.step(up(BindingId::PushToTalk, 50)); // → AwaitingLock
+        // Tick past the window → back to Idle
+        m.step(Input::Tick {
+            now_ms: 50 + DOUBLE_TAP_MS + 1,
+        });
+        assert!(matches!(m.state(), DictationState::Idle));
+        // Now a new press starts a fresh PushToTalk, not Locked
+        let a = m.step(down(BindingId::PushToTalk, 50 + DOUBLE_TAP_MS + 100));
+        assert!(a
+            .iter()
+            .any(|x| matches!(x, Action::ShowBar(BarState::Recording))));
+        assert!(!a
+            .iter()
+            .any(|x| matches!(x, Action::ShowBar(BarState::Locked))));
+    }
+
+    #[test]
+    fn hands_free_chord_locks_immediately() {
+        // A dedicated HandsFree binding down should start a Locked session
+        // directly, without needing a double-tap.
+        let mut m = StateMachine::new();
+        let a = m.step(down(BindingId::HandsFree, 0));
+        assert!(a
+            .iter()
+            .any(|x| matches!(x, Action::ShowBar(BarState::Locked))));
+        assert!(matches!(
+            m.state(),
+            DictationState::Recording {
+                mode: RecordMode::Locked,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn pipeline_committed_for_wrong_session_is_ignored() {
+        // A Committed event for a session that doesn't match the current
+        // Finalizing session must be ignored (stale event from a previous
+        // cancelled session).
+        let mut m = StateMachine::new();
+        m.step(down(BindingId::PushToTalk, 0));
+        m.step(up(BindingId::PushToTalk, 1_000)); // → Finalizing { session: 1 }
+        let a = m.step(Input::Pipeline(PipelineEvent::Committed {
+            session: SessionId(999), // wrong session
+        }));
+        assert!(a.is_empty(), "stale pipeline event should be ignored");
+        assert!(matches!(m.state(), DictationState::Finalizing { .. }));
+    }
+
+    #[test]
+    fn pipeline_failed_returns_to_idle() {
+        let mut m = StateMachine::new();
+        m.step(down(BindingId::PushToTalk, 0));
+        m.step(up(BindingId::PushToTalk, 1_000)); // → Finalizing { session: 1 }
+        let a = m.step(Input::Pipeline(PipelineEvent::Failed {
+            session: SessionId(1),
+        }));
+        assert!(a
+            .iter()
+            .any(|x| matches!(x, Action::ShowBar(BarState::Idle))));
+        assert!(matches!(m.state(), DictationState::Idle));
+    }
+
+    #[test]
+    fn normal_key_during_arm_is_noop() {
+        // A NormalKeyDuringArm trigger (a non-modifier key pressed while
+        // arming) should be a no-op in all states.
+        let mut m = StateMachine::new();
+        let a = m.step(Input::Trigger(TriggerToken::NormalKeyDuringArm));
+        assert!(a.is_empty());
+        // Also during recording
+        m.step(down(BindingId::PushToTalk, 0));
+        let a = m.step(Input::Trigger(TriggerToken::NormalKeyDuringArm));
+        assert!(a.is_empty());
+    }
+
+    #[test]
+    fn session_ids_are_monotonically_increasing() {
+        let mut m = StateMachine::new();
+        m.step(down(BindingId::PushToTalk, 0));
+        m.step(up(BindingId::PushToTalk, 1_000)); // session 1
+        m.step(Input::Pipeline(PipelineEvent::Committed {
+            session: SessionId(1),
+        }));
+        m.step(down(BindingId::PushToTalk, 2_000));
+        // Should be session 2, not session 1 again
+        assert!(matches!(
+            m.state(),
+            DictationState::Recording {
+                session: SessionId(2),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn tick_in_idle_is_noop() {
+        let mut m = StateMachine::new();
+        let a = m.step(Input::Tick { now_ms: 9_999_999 });
+        assert!(a.is_empty());
+        assert!(matches!(m.state(), DictationState::Idle));
+    }
+
+    #[test]
+    fn tick_in_finalizing_is_noop() {
+        let mut m = StateMachine::new();
+        m.step(down(BindingId::PushToTalk, 0));
+        m.step(up(BindingId::PushToTalk, 1_000)); // → Finalizing
+        let a = m.step(Input::Tick { now_ms: 9_999_999 });
+        assert!(a.is_empty(), "tick in Finalizing should not auto-finalize again");
+        assert!(matches!(m.state(), DictationState::Finalizing { .. }));
+    }
+
+    #[test]
+    fn cooldown_after_lone_tap_timeout_prevents_immediate_retrigger() {
+        // A lone tap that times out sets last_end_ms; a press within the
+        // cooldown window after that should be suppressed.
+        let mut m = StateMachine::new();
+        m.step(down(BindingId::PushToTalk, 0));
+        m.step(up(BindingId::PushToTalk, 50)); // → AwaitingLock
+        let timeout = 50 + DOUBLE_TAP_MS + 1;
+        m.step(Input::Tick { now_ms: timeout }); // → Idle, sets last_end
+        // Press within cooldown
+        let a = m.step(down(BindingId::PushToTalk, timeout + COOLDOWN_MS - 1));
+        assert!(a.is_empty(), "press within cooldown after tap timeout should be suppressed");
+        // Press after cooldown
+        let a = m.step(down(BindingId::PushToTalk, timeout + COOLDOWN_MS + 1));
+        assert!(!a.is_empty(), "press after cooldown should start a new session");
+    }
 }

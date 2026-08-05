@@ -193,4 +193,129 @@ mod tests {
         assert_eq!(bundle["snippets"]["entries"][0]["trigger"], "my email");
         assert!(bundle["style"].is_object());
     }
+
+    // ── Edge case coverage: encryption, tamper resistance, empty data ──────
+
+    #[test]
+    fn empty_memory_encrypts_and_decrypts() {
+        let path = temp_path("empty");
+        let m = VoiceMemory::default();
+        m.save_encrypted(&path, KEY).expect("save empty memory");
+
+        let back = VoiceMemory::load_encrypted(&path, KEY);
+        assert!(back.corrections.is_empty());
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn truncated_nonce_falls_back_to_default() {
+        // A file shorter than NONCE_LEN should not panic, just return default.
+        let path = temp_path("truncated-nonce");
+        std::fs::write(&path, b"short").unwrap();
+        let m = VoiceMemory::load_encrypted(&path, KEY);
+        assert!(m.corrections.is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn exactly_nonce_length_falls_back_to_default() {
+        // A file that is exactly NONCE_LEN bytes (no ciphertext) → default.
+        let path = temp_path("nonce-only");
+        std::fs::write(&path, vec![0u8; NONCE_LEN]).unwrap();
+        let m = VoiceMemory::load_encrypted(&path, KEY);
+        assert!(m.corrections.is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn tampered_ciphertext_falls_back_to_default() {
+        // AES-GCM authenticated encryption: flipping a byte must fail decryption.
+        let path = temp_path("tampered");
+        memory().save_encrypted(&path, KEY).expect("save");
+
+        let mut blob = std::fs::read(&path).unwrap();
+        // Flip a byte in the ciphertext (after the nonce).
+        if blob.len() > NONCE_LEN + 1 {
+            blob[NONCE_LEN + 1] ^= 0xFF;
+        }
+        std::fs::write(&path, &blob).unwrap();
+
+        let m = VoiceMemory::load_encrypted(&path, KEY);
+        assert!(m.corrections.is_empty(), "tampered ciphertext must yield default");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn tampered_nonce_falls_back_to_default() {
+        // Flipping a byte in the nonce also breaks decryption.
+        let path = temp_path("tampered-nonce");
+        memory().save_encrypted(&path, KEY).expect("save");
+
+        let mut blob = std::fs::read(&path).unwrap();
+        blob[0] ^= 0xFF;
+        std::fs::write(&path, &blob).unwrap();
+
+        let m = VoiceMemory::load_encrypted(&path, KEY);
+        assert!(m.corrections.is_empty(), "tampered nonce must yield default");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn save_creates_parent_directories() {
+        let dir = std::env::temp_dir().join(format!("whimpr-vm-parent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("nested").join("deep").join("vm.bin");
+
+        memory().save_encrypted(&path, KEY).expect("save should create parent dirs");
+        assert!(path.exists());
+
+        let back = VoiceMemory::load_encrypted(&path, KEY);
+        assert_eq!(back.corrections.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn record_appends_in_order() {
+        let mut m = VoiceMemory::default();
+        m.record("a".into(), "A".into(), "auto".into(), 100);
+        m.record("b".into(), "B".into(), "manual".into(), 200);
+        m.record("c".into(), "C".into(), "auto".into(), 300);
+        assert_eq!(m.corrections.len(), 3);
+        assert_eq!(m.corrections[0].from, "a");
+        assert_eq!(m.corrections[2].to, "C");
+        assert_eq!(m.corrections[1].ts_unix, 200);
+    }
+
+    #[test]
+    fn unicode_corrections_round_trip() {
+        let path = temp_path("unicode");
+        let mut m = VoiceMemory::default();
+        m.record("日本語".into(), "正しい".into(), "manual".into(), 1);
+        m.record("emoji🎤".into(), "マイク".into(), "auto".into(), 2);
+        m.save_encrypted(&path, KEY).unwrap();
+
+        let back = VoiceMemory::load_encrypted(&path, KEY);
+        assert_eq!(back.corrections[0].from, "日本語");
+        assert_eq!(back.corrections[0].to, "正しい");
+        assert_eq!(back.corrections[1].from, "emoji🎤");
+        assert_eq!(back.corrections[1].to, "マイク");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn overwrite_existing_file_replaces_cleanly() {
+        let path = temp_path("overwrite");
+        memory().save_encrypted(&path, KEY).expect("first save");
+
+        // Overwrite with different data.
+        let mut m2 = VoiceMemory::default();
+        m2.record("new".into(), "NEW".into(), "manual".into(), 9_999);
+        m2.save_encrypted(&path, KEY).expect("second save");
+
+        let back = VoiceMemory::load_encrypted(&path, KEY);
+        assert_eq!(back.corrections.len(), 1);
+        assert_eq!(back.corrections[0].from, "new");
+        let _ = std::fs::remove_file(&path);
+    }
 }
