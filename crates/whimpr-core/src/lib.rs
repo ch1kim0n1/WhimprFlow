@@ -33,6 +33,7 @@ pub use license::{
     evaluate_entitlement, verify_license_key, Entitlement, EntitlementKind, LicenseError,
     LicensePayload, LicenseTier, PURCHASE_URL, TRIAL_DAYS,
 };
+pub use machine_id::machine_id;
 pub use safety::redact_inappropriate_words;
 pub use settings::{
     strip_auto_punctuation, strip_fillers, CapsuleSettings, Chord, CleanupMode, Formality, Key,

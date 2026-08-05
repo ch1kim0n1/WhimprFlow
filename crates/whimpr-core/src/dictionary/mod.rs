@@ -331,9 +331,12 @@ mod tests {
 
     #[test]
     fn add_duplicate_mishear_is_not_duplicated() {
+        // The dedup runs on the *merge* path (adding to an existing entry).
+        // Create the entry first, then add duplicate mishears via merge.
         let mut s = DictionaryStore::default();
-        s.add("Manvi", vec!["monvi".into(), "Monvi".into()], DictSource::Manual);
-        // Case-insensitive dedup of mishears.
+        s.add("Manvi", vec!["monvi".into()], DictSource::Manual);
+        s.add("Manvi", vec!["Monvi".into()], DictSource::Manual);
+        // Case-insensitive dedup of mishears on the merge path.
         assert_eq!(s.entries[0].mishears.len(), 1, "case-insensitive mishear dedup");
     }
 
@@ -348,7 +351,9 @@ mod tests {
     fn remove_is_case_insensitive() {
         let mut s = store();
         assert!(s.remove("manvi"), "remove should be case-insensitive");
-        assert!(s.entries.is_empty());
+        // store() has two entries (Manvi, ChargeBee); only Manvi is removed.
+        assert_eq!(s.entries.len(), 1, "only Manvi should be removed");
+        assert!(s.entries.iter().any(|e| e.correct == "ChargeBee"));
     }
 
     #[test]
@@ -433,7 +438,7 @@ mod tests {
     fn save_and_load_round_trip() {
         let tmp = std::env::temp_dir().join(format!("whimpr-dict-rt-{}", std::process::id()));
         let _ = std::fs::remove_file(&tmp);
-        let mut s = store();
+        let s = store();
         s.save(&tmp).unwrap();
         let loaded = DictionaryStore::load(&tmp);
         assert_eq!(loaded.entries.len(), 2);

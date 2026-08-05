@@ -480,13 +480,16 @@ mod tests {
         let mut m = StateMachine::new();
         m.step(down(BindingId::PushToTalk, 0));
         m.step(up(BindingId::PushToTalk, 50)); // → AwaitingLock
-        // Tick past the window → back to Idle
-        m.step(Input::Tick {
-            now_ms: 50 + DOUBLE_TAP_MS + 1,
-        });
+        // Tick past the window → back to Idle (also sets last_end for cooldown)
+        let timeout_ms = 50 + DOUBLE_TAP_MS + 1;
+        m.step(Input::Tick { now_ms: timeout_ms });
         assert!(matches!(m.state(), DictationState::Idle));
-        // Now a new press starts a fresh PushToTalk, not Locked
-        let a = m.step(down(BindingId::PushToTalk, 50 + DOUBLE_TAP_MS + 100));
+        // Now a new press starts a fresh PushToTalk, not Locked.
+        // Must be past the cooldown window (COOLDOWN_MS after last_end).
+        let a = m.step(down(
+            BindingId::PushToTalk,
+            timeout_ms + COOLDOWN_MS + 100,
+        ));
         assert!(a
             .iter()
             .any(|x| matches!(x, Action::ShowBar(BarState::Recording))));

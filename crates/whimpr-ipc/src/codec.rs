@@ -233,11 +233,11 @@ mod tests {
     fn interleaved_reads_and_writes_preserve_order() {
         // Write 3 frames, read them back in order.
         let mut buf: Vec<u8> = Vec::new();
-        for i in 0..3u32 {
+        for i in 0..3u64 {
             write_frame(&mut buf, &SidecarToShell::Pong { seq: i }).unwrap();
         }
         let mut cursor = std::io::Cursor::new(buf);
-        for i in 0..3u32 {
+        for i in 0..3u64 {
             let got: Option<SidecarToShell> = read_frame(&mut cursor).unwrap();
             assert!(matches!(got, Some(SidecarToShell::Pong { seq }) if seq == i));
         }
