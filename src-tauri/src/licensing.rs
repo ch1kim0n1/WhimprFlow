@@ -294,7 +294,10 @@ mod tests {
             }
             (Ok(a), Ok(b)) => {
                 // Both succeeded - must have the same expiry (machine ID file preserved start)
-                assert_eq!(a.expires_unix, b.expires_unix, "trial start time changed after keychain delete");
+                assert_eq!(
+                    a.expires_unix, b.expires_unix,
+                    "trial start time changed after keychain delete"
+                );
                 assert_eq!(a.expires_unix, first_expiry);
             }
             _ => {}

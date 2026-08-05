@@ -253,8 +253,14 @@ mod tests {
 
     #[test]
     fn entity_present_case_insensitive() {
-        assert!(entity_present("The URL is HTTPS://EXAMPLE.COM", "https://example.com"));
-        assert!(entity_present("The URL is Https://Example.Com", "https://example.com"));
+        assert!(entity_present(
+            "The URL is HTTPS://EXAMPLE.COM",
+            "https://example.com"
+        ));
+        assert!(entity_present(
+            "The URL is Https://Example.Com",
+            "https://example.com"
+        ));
     }
 
     #[test]
@@ -265,7 +271,13 @@ mod tests {
 
     #[test]
     fn entity_with_url_detected() {
-        assert!(entity_present("Visit https://example.com/api", "https://example.com"));
-        assert!(entity_present("Visit https://example.com/api.", "https://example.com"));
+        assert!(entity_present(
+            "Visit https://example.com/api",
+            "https://example.com"
+        ));
+        assert!(entity_present(
+            "Visit https://example.com/api.",
+            "https://example.com"
+        ));
     }
 }

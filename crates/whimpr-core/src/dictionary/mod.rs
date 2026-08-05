@@ -325,7 +325,11 @@ mod tests {
         let mut s = DictionaryStore::default();
         s.add("Manvi", vec!["monvi".into()], DictSource::Manual);
         s.add("Manvi", vec!["manvee".into()], DictSource::Manual);
-        assert_eq!(s.entries.len(), 1, "duplicate correct spelling should merge");
+        assert_eq!(
+            s.entries.len(),
+            1,
+            "duplicate correct spelling should merge"
+        );
         assert_eq!(s.entries[0].mishears.len(), 2);
     }
 
@@ -337,7 +341,11 @@ mod tests {
         s.add("Manvi", vec!["monvi".into()], DictSource::Manual);
         s.add("Manvi", vec!["Monvi".into()], DictSource::Manual);
         // Case-insensitive dedup of mishears on the merge path.
-        assert_eq!(s.entries[0].mishears.len(), 1, "case-insensitive mishear dedup");
+        assert_eq!(
+            s.entries[0].mishears.len(),
+            1,
+            "case-insensitive mishear dedup"
+        );
     }
 
     #[test]
@@ -373,15 +381,13 @@ mod tests {
         let mut s = DictionaryStore::default();
         for i in 0..20 {
             s.add(
-                &format!("Word{i}"),
+                format!("Word{i}"),
                 vec![format!("word{i}")],
                 DictSource::Manual,
             );
         }
         // An utterance containing all words → should be capped at max.
-        let utterance: String = (0..20)
-            .map(|i| format!("word{i} "))
-            .collect();
+        let utterance: String = (0..20).map(|i| format!("word{i} ")).collect();
         let v = s.prefilter(&utterance, 5);
         assert!(v.len() <= 5, "prefilter should respect max limit");
     }
@@ -466,7 +472,8 @@ mod tests {
     fn load_backfills_phonetic_codes_for_old_entries() {
         // Simulate an old entry without phonetic codes.
         let tmp = std::env::temp_dir().join(format!("whimpr-dict-phonetic-{}", std::process::id()));
-        let old_json = r#"{"entries":[{"correct":"Manvi","mishears":["monvi"],"source":"manual"}]}"#;
+        let old_json =
+            r#"{"entries":[{"correct":"Manvi","mishears":["monvi"],"source":"manual"}]}"#;
         std::fs::write(&tmp, old_json).unwrap();
 
         let s = DictionaryStore::load(&tmp);

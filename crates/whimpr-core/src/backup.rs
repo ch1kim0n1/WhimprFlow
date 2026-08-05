@@ -155,7 +155,10 @@ mod tests {
         )
         .unwrap();
 
-        assert!(dest.exists(), "backup folder should be created even with no files");
+        assert!(
+            dest.exists(),
+            "backup folder should be created even with no files"
+        );
         assert!(!dest.join("a.json").exists());
         assert!(!dest.join("b.json").exists());
         let _ = std::fs::remove_dir_all(&tmp);
@@ -163,24 +166,23 @@ mod tests {
 
     #[test]
     fn restore_from_nonexistent_dir_errors() {
-        let tmp = std::env::temp_dir().join(format!("whimpr-restore-missing-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("whimpr-restore-missing-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         let res = restore_files(
             &[("settings.json", tmp.join("settings.json"))],
             &tmp.join("nonexistent-backup"),
         );
         assert!(res.is_err(), "restoring from a missing folder must error");
-        assert_eq!(
-            res.unwrap_err().kind(),
-            std::io::ErrorKind::NotFound
-        );
+        assert_eq!(res.unwrap_err().kind(), std::io::ErrorKind::NotFound);
     }
 
     #[test]
     fn restore_skips_unknown_files_in_backup() {
         // A backup folder with extra files not in the restore list → those
         // are ignored, only listed files are restored.
-        let tmp = std::env::temp_dir().join(format!("whimpr-restore-unknown-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("whimpr-restore-unknown-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
 
@@ -206,11 +208,8 @@ mod tests {
         std::fs::create_dir_all(&backup_dir).unwrap();
         // No settings.json in the backup folder.
 
-        let n = restore_files(
-            &[("settings.json", tmp.join("settings.json"))],
-            &backup_dir,
-        )
-        .unwrap();
+        let n =
+            restore_files(&[("settings.json", tmp.join("settings.json"))], &backup_dir).unwrap();
         assert_eq!(n, 0, "missing file in backup should be skipped, not error");
         assert!(!tmp.join("settings.json").exists());
         let _ = std::fs::remove_dir_all(&tmp);
@@ -235,14 +234,8 @@ mod tests {
         let dirs = list_backups(&root).unwrap();
         assert_eq!(dirs.len(), 5);
         // Newest first = highest timestamp first.
-        assert_eq!(
-            dirs[0].file_name().unwrap().to_string_lossy(),
-            "1700000004"
-        );
-        assert_eq!(
-            dirs[4].file_name().unwrap().to_string_lossy(),
-            "1700000000"
-        );
+        assert_eq!(dirs[0].file_name().unwrap().to_string_lossy(), "1700000004");
+        assert_eq!(dirs[4].file_name().unwrap().to_string_lossy(), "1700000000");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -263,7 +256,8 @@ mod tests {
 
     #[test]
     fn prune_keeps_exactly_max_backups() {
-        let tmp = std::env::temp_dir().join(format!("whimpr-backup-prune-exact-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("whimpr-backup-prune-exact-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         let root = tmp.join("backups");
         std::fs::create_dir_all(&root).unwrap();
@@ -278,7 +272,8 @@ mod tests {
 
     #[test]
     fn prune_with_zero_backups_keeps_none() {
-        let tmp = std::env::temp_dir().join(format!("whimpr-backup-prune-zero-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("whimpr-backup-prune-zero-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         let root = tmp.join("backups");
         std::fs::create_dir_all(&root).unwrap();
@@ -316,7 +311,10 @@ mod tests {
         // Restore.
         let n = restore_files(&files, &backup).unwrap();
         assert_eq!(n, 2);
-        assert_eq!(std::fs::read_to_string(&settings).unwrap(), r#"{"mode":"local"}"#);
+        assert_eq!(
+            std::fs::read_to_string(&settings).unwrap(),
+            r#"{"mode":"local"}"#
+        );
         assert_eq!(std::fs::read_to_string(&dict).unwrap(), r#"{"entries":[]}"#);
 
         let _ = std::fs::remove_dir_all(&tmp);

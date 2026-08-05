@@ -242,7 +242,10 @@ mod tests {
         std::fs::write(&path, &blob).unwrap();
 
         let m = VoiceMemory::load_encrypted(&path, KEY);
-        assert!(m.corrections.is_empty(), "tampered ciphertext must yield default");
+        assert!(
+            m.corrections.is_empty(),
+            "tampered ciphertext must yield default"
+        );
         let _ = std::fs::remove_file(&path);
     }
 
@@ -257,7 +260,10 @@ mod tests {
         std::fs::write(&path, &blob).unwrap();
 
         let m = VoiceMemory::load_encrypted(&path, KEY);
-        assert!(m.corrections.is_empty(), "tampered nonce must yield default");
+        assert!(
+            m.corrections.is_empty(),
+            "tampered nonce must yield default"
+        );
         let _ = std::fs::remove_file(&path);
     }
 
@@ -267,7 +273,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("nested").join("deep").join("vm.bin");
 
-        memory().save_encrypted(&path, KEY).expect("save should create parent dirs");
+        memory()
+            .save_encrypted(&path, KEY)
+            .expect("save should create parent dirs");
         assert!(path.exists());
 
         let back = VoiceMemory::load_encrypted(&path, KEY);

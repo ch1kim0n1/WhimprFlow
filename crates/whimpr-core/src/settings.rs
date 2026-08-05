@@ -681,7 +681,10 @@ mod tests {
     #[test]
     fn validate_keybindings_empty_for_defaults() {
         let kb = KeyBindings::default();
-        assert!(kb.validate_keybindings().is_empty(), "defaults must have no conflicts");
+        assert!(
+            kb.validate_keybindings().is_empty(),
+            "defaults must have no conflicts"
+        );
     }
 
     #[test]
@@ -696,7 +699,11 @@ mod tests {
         };
         let conflicts = kb.validate_keybindings();
         // 4 bindings, all same → C(4,2) = 6 pairs.
-        assert_eq!(conflicts.len(), 6, "4 identical bindings → 6 pairwise conflicts");
+        assert_eq!(
+            conflicts.len(),
+            6,
+            "4 identical bindings → 6 pairwise conflicts"
+        );
     }
 
     #[test]
@@ -739,7 +746,10 @@ mod tests {
 
     #[test]
     fn strip_fillers_custom_list() {
-        let out = strip_fillers("like totally yeah", &["like".to_string(), "yeah".to_string()]);
+        let out = strip_fillers(
+            "like totally yeah",
+            &["like".to_string(), "yeah".to_string()],
+        );
         assert_eq!(out, "totally");
     }
 
@@ -785,7 +795,7 @@ mod tests {
         };
         s.save(&tmp).unwrap();
         let loaded = Settings::load(&tmp);
-        assert_eq!(loaded.safe_mode, true);
+        assert!(loaded.safe_mode);
         assert_eq!(loaded.language, Some("es".to_string()));
         assert_eq!(loaded.retention_days, Some(7));
         let _ = std::fs::remove_file(&tmp);
@@ -800,7 +810,8 @@ mod tests {
 
     #[test]
     fn settings_load_corrupt_file_returns_default() {
-        let tmp = std::env::temp_dir().join(format!("whimpr-settings-corrupt-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("whimpr-settings-corrupt-{}", std::process::id()));
         std::fs::write(&tmp, b"{ this is not valid json }").unwrap();
         let s = Settings::load(&tmp);
         assert_eq!(s.cleanup_mode, CleanupMode::Local, "corrupt file → default");

@@ -142,7 +142,10 @@ mod tests {
         // so this must be an error, not Ok(None).
         let mut cursor = std::io::Cursor::new(vec![0x01, 0x00]);
         let res: Result<Option<ShellToSidecar>, _> = read_frame(&mut cursor);
-        assert!(res.is_err(), "partial length prefix must error, not return None");
+        assert!(
+            res.is_err(),
+            "partial length prefix must error, not return None"
+        );
         assert!(matches!(
             res,
             Err(CodecError::Io(ref e)) if e.kind() == io::ErrorKind::UnexpectedEof

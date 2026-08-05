@@ -480,16 +480,13 @@ mod tests {
         let mut m = StateMachine::new();
         m.step(down(BindingId::PushToTalk, 0));
         m.step(up(BindingId::PushToTalk, 50)); // → AwaitingLock
-        // Tick past the window → back to Idle (also sets last_end for cooldown)
+                                               // Tick past the window → back to Idle (also sets last_end for cooldown)
         let timeout_ms = 50 + DOUBLE_TAP_MS + 1;
         m.step(Input::Tick { now_ms: timeout_ms });
         assert!(matches!(m.state(), DictationState::Idle));
         // Now a new press starts a fresh PushToTalk, not Locked.
         // Must be past the cooldown window (COOLDOWN_MS after last_end).
-        let a = m.step(down(
-            BindingId::PushToTalk,
-            timeout_ms + COOLDOWN_MS + 100,
-        ));
+        let a = m.step(down(BindingId::PushToTalk, timeout_ms + COOLDOWN_MS + 100));
         assert!(a
             .iter()
             .any(|x| matches!(x, Action::ShowBar(BarState::Recording))));
@@ -591,7 +588,10 @@ mod tests {
         m.step(down(BindingId::PushToTalk, 0));
         m.step(up(BindingId::PushToTalk, 1_000)); // → Finalizing
         let a = m.step(Input::Tick { now_ms: 9_999_999 });
-        assert!(a.is_empty(), "tick in Finalizing should not auto-finalize again");
+        assert!(
+            a.is_empty(),
+            "tick in Finalizing should not auto-finalize again"
+        );
         assert!(matches!(m.state(), DictationState::Finalizing { .. }));
     }
 
@@ -604,11 +604,17 @@ mod tests {
         m.step(up(BindingId::PushToTalk, 50)); // → AwaitingLock
         let timeout = 50 + DOUBLE_TAP_MS + 1;
         m.step(Input::Tick { now_ms: timeout }); // → Idle, sets last_end
-        // Press within cooldown
+                                                 // Press within cooldown
         let a = m.step(down(BindingId::PushToTalk, timeout + COOLDOWN_MS - 1));
-        assert!(a.is_empty(), "press within cooldown after tap timeout should be suppressed");
+        assert!(
+            a.is_empty(),
+            "press within cooldown after tap timeout should be suppressed"
+        );
         // Press after cooldown
         let a = m.step(down(BindingId::PushToTalk, timeout + COOLDOWN_MS + 1));
-        assert!(!a.is_empty(), "press after cooldown should start a new session");
+        assert!(
+            !a.is_empty(),
+            "press after cooldown should start a new session"
+        );
     }
 }
