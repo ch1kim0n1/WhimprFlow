@@ -34,3 +34,10 @@ base64 = "0.22"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# Local patch: zmij's build.rs is blocked by Windows Device Guard. Since rustc
+# 1.96 doesn't need any cfg flags from it (only check-cfg directives), we patch
+# it with a no-build-script copy. Remove this patch on machines without Device Guard.
+[patch.crates-io]
+zmij = { path = ".patches/zmij" }
+num-traits = { path = ".patches/num-traits" }

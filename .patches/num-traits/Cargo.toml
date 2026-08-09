@@ -1,0 +1,23 @@
+[package]
+edition = "2021"
+rust-version = "1.60"
+name = "num-traits"
+version = "0.2.19"
+authors = ["The Rust Project Developers"]
+description = "Numeric traits for generic mathematics"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rust-num/num-traits"
+
+[lib]
+name = "num_traits"
+path = "src/lib.rs"
+
+[dependencies.libm]
+version = "0.2.0"
+optional = true
+
+[features]
+default = ["std"]
+i128 = []
+libm = ["dep:libm"]
+std = []

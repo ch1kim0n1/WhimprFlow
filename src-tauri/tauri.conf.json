@@ -47,7 +47,7 @@
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ1MUYyQUU1MzMwNTdDMTgKUldRWWZBVXo1U29mUlk2azNRTTBWWmRjWkYwNmVwbXowYm96QW8rSkJTQmJ5WG42VzBUR2dnT1YK",
       "dialog": true,
       "windows": {
-        "installMode": "currentUser"
+        "installMode": "passive"
       }
     }
   }
